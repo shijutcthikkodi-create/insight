@@ -1,0 +1,107 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-slate-950: #020617;
+  
+  --animate-box-glow: box-glow 0.8s ease-in-out infinite;
+  --animate-box-blink: box-blink 0.4s ease-in-out infinite;
+  --animate-card-pulse: card-pulse 1.2s ease-in-out infinite;
+  --animate-notification: notification-slide 5s ease-in-out forwards;
+  --animate-target-success: target-hit-success 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  --animate-success-shimmer: success-shimmer 2s linear infinite;
+  --animate-fire-blast: fire-blast-double 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-slate-950 text-slate-200 antialiased overflow-hidden m-0 p-0;
+    font-family: 'Inter', sans-serif;
+    user-select: none;
+  }
+  * {
+    @apply border-slate-800;
+    box-sizing: border-box;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #020617; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+
+@keyframes box-glow {
+  0%, 100% { background-color: transparent; box-shadow: 0 0 0px rgba(59, 130, 246, 0); }
+  50% { background-color: rgba(59, 130, 246, 0.2); box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+}
+
+@keyframes box-blink {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(59, 130, 246, 0.3); }
+}
+
+@keyframes card-pulse {
+  0%, 100% { border-color: rgba(59, 130, 246, 0.3); box-shadow: 0 0 0px rgba(59, 130, 246, 0); }
+  50% { border-color: rgba(59, 130, 246, 1); box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); }
+}
+
+@keyframes notification-slide {
+  0% { transform: translateY(-100%) scale(0.9); opacity: 0; }
+  10% { transform: translateY(0) scale(1.05); opacity: 1; }
+  15% { transform: translateY(0) scale(1); opacity: 1; }
+  85% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-100%) scale(0.9); opacity: 0; }
+}
+
+@keyframes target-hit-success {
+  0% { transform: scale(1); background-color: rgba(16, 185, 129, 0.2); border-color: #10b981; box-shadow: 0 0 0px rgba(16, 185, 129, 0); }
+  20% { transform: scale(1.15); background-color: rgba(16, 185, 129, 0.8); border-color: #34d399; box-shadow: 0 0 40px rgba(16, 185, 129, 0.6); }
+  100% { transform: scale(1); background-color: #020617; border-color: #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.2); }
+}
+
+@keyframes fire-blast-double {
+  0% { transform: scale(1); background-color: #020617; box-shadow: 0 0 0px transparent; }
+  /* Blast 1 */
+  15% { transform: scale(1.25); background-color: #facc15; box-shadow: 0 0 80px 25px rgba(234, 179, 8, 0.9); }
+  35% { transform: scale(1.1); background-color: #10b981; box-shadow: 0 0 30px 10px rgba(16, 185, 129, 0.6); }
+  45% { transform: scale(1); background-color: rgba(16, 185, 129, 0.3); }
+  /* GAP - Pause in normal state */
+  55% { transform: scale(1); background-color: rgba(16, 185, 129, 0.3); }
+  /* Blast 2 */
+  70% { transform: scale(1.25); background-color: #facc15; box-shadow: 0 0 80px 25px rgba(234, 179, 8, 0.9); }
+  90% { transform: scale(1.1); background-color: #10b981; box-shadow: 0 0 30px 10px rgba(16, 185, 129, 0.6); }
+  100% { transform: scale(1); background-color: rgba(16, 185, 129, 0.2); border-color: #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+}
+
+@keyframes success-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.status-stamp {
+  border: 4px solid currentColor;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  transform: rotate(-15deg);
+  box-shadow: inset 0 0 0 2px currentColor;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(4px);
+}
