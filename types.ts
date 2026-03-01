@@ -139,6 +139,10 @@ export interface WatchlistItem {
 export interface MonthlyRealization {
   month: string;
   realization: number;
+  overall?: number;
+  intraday?: number;
+  overnight?: number;
+  count?: number;
 }
 
 export interface PnLStats {

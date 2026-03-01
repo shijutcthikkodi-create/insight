@@ -74,6 +74,11 @@ const Stats: React.FC<{
 
   const performance = useMemo(() => {
     const now = new Date();
+    const windowDays = 180;
+    const windowStartDate = new Date();
+    windowStartDate.setDate(now.getDate() - windowDays);
+    const windowStartDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(windowStartDate);
+
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(now.getDate() - 30);
     const thirtyDaysAgoStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(thirtyDaysAgo);
@@ -99,6 +104,9 @@ const Stats: React.FC<{
     let latestAuditDate: string | null = null;
 
     const chartMap: Record<string, number> = {};
+    // Keep 14-day chart as is for "Realized Trend" or should it be longer? 
+    // User said "same like 14 day rolling realization curve we need 14 month realization curve" previously.
+    // The 14-day chart is fine for short-term trend.
     for (let i = 13; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
       chartMap[new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d)] = 0;
@@ -113,32 +121,59 @@ const Stats: React.FC<{
       
       const successScore = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0));
 
-      if (tradeDateStr >= thirtyDaysAgoStr) {
-        rollingStats.pnl += pnlValue;
-        rollingStats.overall.push(successScore);
+      const instrument = trade.instrument || '';
+      const indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'];
+      const isIdx = indices.includes(instrument.toUpperCase());
 
+      // 180-Day Window for Consistency
+      if (tradeDateStr >= windowStartDateStr) {
+        rollingStats.overall.push(successScore);
+        if (trade.isBTST) rollingStats.btst.push(successScore); else rollingStats.intraday.push(successScore);
+        
         if (!earliestAuditDate || tradeDateStr < earliestAuditDate) earliestAuditDate = tradeDateStr;
         if (!latestAuditDate || tradeDateStr > latestAuditDate) latestAuditDate = tradeDateStr;
-        
-        const instrument = trade.instrument || '';
-        const indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'];
-        const isIdx = indices.includes(instrument.toUpperCase());
-        
+      }
+
+      // 30-Day Window for Net Outcome
+      if (tradeDateStr >= thirtyDaysAgoStr) {
+        rollingStats.pnl += pnlValue;
         if (isIdx) rollingStats.indexPnL += pnlValue; else rollingStats.stockPnL += pnlValue;
-        if (trade.isBTST) rollingStats.btst.push(successScore); else rollingStats.intraday.push(successScore);
       }
       
       if (chartMap[tradeDateStr] !== undefined) chartMap[tradeDateStr] += pnlValue;
     });
 
     const calculateConsistency = (list: number[]) => {
-      // Logic: 0 P&L trade is ignored entirely from the consistency calculation
       const filteredList = list.filter(v => v !== 0);
-      if (filteredList.length === 0) return 0;
-      
+      if (filteredList.length === 0) return null;
       const successCount = filteredList.filter(v => v > 0).length;
       return (successCount / filteredList.length) * 100;
     };
+
+    // Incorporate METRICS data for consistency
+    const combineWithMetrics = (historyRatio: number | null, type: 'overall' | 'intraday' | 'overnight') => {
+      const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      const relevantMetrics = (monthlyRealization || []).filter(m => {
+        const [mon, year] = m.month.split('/');
+        const mIdx = monthNames.indexOf(mon.toUpperCase());
+        const mDate = new Date(parseInt(year), mIdx, 1);
+        // Month is within 180 days AND older than earliest history date (or just within 180 days)
+        // To avoid double counting, we only take months that are fully completed and not in the "running" history
+        // But the user said "collect data... from history and last months from metrics"
+        return mDate >= windowStartDate && m[type] !== undefined;
+      });
+
+      const metricRatios = relevantMetrics.map(m => m[type] as number);
+      const allRatios = [...metricRatios];
+      if (historyRatio !== null) allRatios.push(historyRatio);
+
+      if (allRatios.length === 0) return 0;
+      return allRatios.reduce((a, b) => a + b, 0) / allRatios.length;
+    };
+
+    const historyOverall = calculateConsistency(rollingStats.overall);
+    const historyIntraday = calculateConsistency(rollingStats.intraday);
+    const historyOvernight = calculateConsistency(rollingStats.btst);
 
     const formatDate = (isoStr: string | null) => {
       if (!isoStr) return '--';
@@ -150,11 +185,22 @@ const Stats: React.FC<{
       rollingPnL: rollingStats.pnl,
       indexPnL: rollingStats.indexPnL,
       stockPnL: rollingStats.stockPnL,
-      overallPercent: calculateConsistency(rollingStats.overall),
-      intradayPercent: calculateConsistency(rollingStats.intraday),
-      overnightPercent: calculateConsistency(rollingStats.btst),
-      auditStart: formatDate(earliestAuditDate),
+      overallPercent: combineWithMetrics(historyOverall, 'overall'),
+      intradayPercent: combineWithMetrics(historyIntraday, 'intraday'),
+      overnightPercent: combineWithMetrics(historyOvernight, 'overnight'),
+      auditStart: formatDate(earliestAuditDate || windowStartDateStr),
       auditEnd: formatDate(latestAuditDate || now.toISOString()),
+      auditDays: (() => {
+        const currentMonthTrades = combinedHistory.filter(t => {
+          const dStr = normalizeDate(t);
+          if (!dStr) return false;
+          const d = new Date(dStr);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        });
+        const uniqueHistoryDays = new Set(currentMonthTrades.map(t => normalizeDate(t))).size;
+        const metricsDaysCount = (monthlyRealization || []).reduce((sum, m) => sum + (m.count || 30), 0);
+        return uniqueHistoryDays + metricsDaysCount;
+      })(),
       chartData: Object.entries(chartMap).map(([date, pnl]) => ({ 
         date: date.split('-').reverse().slice(0, 2).join('/'), 
         pnl 
@@ -230,7 +276,7 @@ const Stats: React.FC<{
         </div>
         <div className="flex items-center space-x-2 text-slate-400 text-[10px] bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
            <Filter size={12} className="text-blue-500" />
-           <span className="uppercase font-black tracking-tighter">Rolling 30-Day Terminal Data</span>
+           <span className="uppercase font-black tracking-tighter">Hybrid 30/180-Day Terminal Data</span>
         </div>
       </div>
 
@@ -243,7 +289,7 @@ const Stats: React.FC<{
           highlight={true} 
         />
         <StatItem 
-          label="Consistency Ratio (30-Day)" 
+          label={`Consistency Ratio (${performance.auditDays}-Day)`} 
           value={`${performance.overallPercent.toFixed(1)}%`} 
           colorClass={getConsistencyColor(performance.overallPercent)}
           icon={Award}
@@ -256,7 +302,7 @@ const Stats: React.FC<{
           icon={Briefcase} 
         />
         <StatItem 
-          label="Intraday Consistency" 
+          label={`Intraday Consistency (${performance.auditDays}-Day)`} 
           value={`${performance.intradayPercent.toFixed(1)}%`} 
           colorClass={getConsistencyColor(performance.intradayPercent)}
           icon={Zap}
@@ -269,7 +315,7 @@ const Stats: React.FC<{
           icon={Layers} 
         />
         <StatItem 
-          label="Overnight Consistency" 
+          label={`Overnight Consistency (${performance.auditDays}-Day)`} 
           value={`${performance.overnightPercent.toFixed(1)}%`} 
           colorClass={getConsistencyColor(performance.overnightPercent)}
           icon={Clock}

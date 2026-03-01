@@ -131,14 +131,21 @@ export const fetchSheetData = async (retries = 3): Promise<SheetData | null> => 
       history: (data.history || [])
         .map((s: any, i: number) => parseSignalRow(s, i, 'HIST'))
         .filter((s: any) => s !== null) as TradeSignal[],
-      monthlyRealization: (data.history || [])
+      monthlyRealization: (data.metrics || data.history || [])
         .reduce((acc: MonthlyRealization[], s: any) => {
           const month = getVal(s, 'month');
           const realization = getNum(s, 'realization');
           if (month && realization !== undefined) {
             const monthStr = String(month).trim();
             if (monthStr && !acc.some(m => m.month === monthStr)) {
-              acc.push({ month: monthStr, realization });
+              acc.push({ 
+                month: monthStr, 
+                realization,
+                overall: getNum(s, 'overall'),
+                intraday: getNum(s, 'intraday'),
+                overnight: getNum(s, 'overnight'),
+                count: getNum(s, 'count')
+              });
             }
           }
           return acc;
