@@ -9,7 +9,7 @@ import About from './pages/About';
 import Admin from './pages/Admin';
 import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
-import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData } from './types';
+import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
 import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw } from 'lucide-react';
 
@@ -74,6 +74,7 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [insights, setInsights] = useState<InsightData[]>([]);
+  const [monthlyRealization, setMonthlyRealization] = useState<MonthlyRealization[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'error' | 'syncing'>('syncing');
   const [lastSyncTime, setLastSyncTime] = useState<string>('--:--:--');
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem('libra_sound_enabled') !== 'false');
@@ -494,6 +495,7 @@ const App: React.FC = () => {
         setUsers([...data.users]);
         setLogs([...(data.logs || [])]);
         setMessages([...(data.messages || [])]);
+        setMonthlyRealization([...(data.monthlyRealization || [])]);
         setInsights(reconciledInsights);
         setConnectionStatus('connected');
       } else {
@@ -754,7 +756,7 @@ const App: React.FC = () => {
       {page === 'dashboard' && <Dashboard watchlist={watchlist} signals={signals} messages={messages} user={user} granularHighlights={granularHighlights} activeMajorAlerts={activeMajorAlerts} activeWatchlistAlerts={activeWatchlistAlerts} activeIntelAlert={activeIntelAlert} onSignalUpdate={handleSignalUpdate} />}
       {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
-      {page === 'stats' && <Stats signals={signals} historySignals={historySignals} />}
+      {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}
       {page === 'rules' && <Rules />}
       {page === 'about' && <About />}
       {user?.isAdmin && page === 'admin' && <Admin watchlist={watchlist} onUpdateWatchlist={() => {}} signals={signals} onUpdateSignals={() => {}} users={users} onUpdateUsers={() => {}} logs={logs} messages={messages} onNavigate={setPage} onHardSync={() => { deadSignalsRef.current.clear(); deadInsightsRef.current.clear(); return sync(true); }} />}

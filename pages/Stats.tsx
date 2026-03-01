@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState, useLayoutEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { TradeSignal, TradeStatus } from '../types';
-import { TrendingUp, BarChart3, Filter, Award, Clock, Layers, Briefcase, History as HistoryIcon, Zap, Calendar } from 'lucide-react';
+import { TradeSignal, TradeStatus, MonthlyRealization } from '../types';
+import { TrendingUp, BarChart3, Filter, Award, Clock, Layers, Briefcase, History as HistoryIcon, Zap, Calendar, LineChart as LineChartIcon } from 'lucide-react';
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -22,9 +22,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const Stats: React.FC<{ signals?: (TradeSignal & { sheetIndex?: number })[]; historySignals?: TradeSignal[] }> = ({ signals = [], historySignals = [] }) => {
+const Stats: React.FC<{ 
+  signals?: (TradeSignal & { sheetIndex?: number })[]; 
+  historySignals?: TradeSignal[];
+  monthlyRealization?: MonthlyRealization[];
+}> = ({ signals = [], historySignals = [], monthlyRealization = [] }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const monthContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState<number | string>('100%');
+  const [monthChartWidth, setMonthChartWidth] = useState<number | string>('100%');
   const [isReady, setIsReady] = useState(false);
 
   useLayoutEffect(() => {
@@ -33,6 +39,9 @@ const Stats: React.FC<{ signals?: (TradeSignal & { sheetIndex?: number })[]; his
       const entry = entries[0];
       if (entry && entry.contentRect.width > 0) {
         setChartWidth(Math.floor(entry.contentRect.width));
+        if (monthContainerRef.current) {
+          setMonthChartWidth(Math.floor(monthContainerRef.current.clientWidth));
+        }
         setIsReady(true);
       }
     });
@@ -149,9 +158,37 @@ const Stats: React.FC<{ signals?: (TradeSignal & { sheetIndex?: number })[]; his
       chartData: Object.entries(chartMap).map(([date, pnl]) => ({ 
         date: date.split('-').reverse().slice(0, 2).join('/'), 
         pnl 
-      }))
+      })),
+      monthlyChartData: (() => {
+        const monthChartMap: Record<string, number> = {};
+        const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        
+        // Generate last 14 months
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(1); // Avoid month-end overflow
+          d.setMonth(d.getMonth() - i);
+          const m = monthNames[d.getMonth()];
+          const y = d.getFullYear();
+          const key = `${m}/${y}`;
+          monthChartMap[key] = 0;
+        }
+
+        // Fill with actual data
+        (monthlyRealization || []).forEach(item => {
+          const k = item.month.toUpperCase();
+          if (monthChartMap[k] !== undefined) {
+            monthChartMap[k] = item.realization;
+          }
+        });
+
+        return Object.entries(monthChartMap).map(([month, realization]) => ({
+          month,
+          realization
+        }));
+      })()
     };
-  }, [signals, historySignals]);
+  }, [signals, historySignals, monthlyRealization]);
 
   const getConsistencyColor = (percent: number) => {
     if (percent < 50) return 'text-rose-500';
@@ -264,6 +301,38 @@ const Stats: React.FC<{ signals?: (TradeSignal & { sheetIndex?: number })[]; his
                 <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(30, 41, 59, 0.2)'}} />
                 <Bar dataKey="pnl" radius={[6, 6, 0, 0]} barSize={35}>
                   {performance.chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? '#10b981' : '#f43f5e'} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="flex items-center justify-between mb-10 relative z-10">
+            <div>
+              <h3 className="text-white font-bold flex items-center text-sm uppercase tracking-widest">
+                <LineChartIcon size={16} className="mr-3 text-emerald-500" />
+                Monthly Realization
+              </h3>
+              <p className="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-tighter">14-Month Realization Curve</p>
+            </div>
+        </div>
+        
+        <div 
+          ref={monthContainerRef}
+          className="w-full relative z-10 block" 
+          style={{ height: '300px', minWidth: '0px', minHeight: '300px', overflow: 'hidden' }}
+        >
+          {isReady && (
+            <ResponsiveContainer width={monthChartWidth as any} height={300} debounce={50}>
+              <BarChart data={performance.monthlyChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.3} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10, fontWeight: 800}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10, fontWeight: 800}} tickFormatter={(val) => `₹${Math.abs(val) >= 1000 ? (val/1000).toFixed(0) + 'k' : val}`} />
+                <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(30, 41, 59, 0.2)'}} />
+                <Bar dataKey="realization" radius={[6, 6, 0, 0]} barSize={35}>
+                  {performance.monthlyChartData.map((entry, index) => <Cell key={`cell-month-${index}`} fill={entry.realization >= 0 ? '#10b981' : '#f43f5e'} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

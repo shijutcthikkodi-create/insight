@@ -136,6 +136,11 @@ export interface WatchlistItem {
   lastUpdated: string;
 }
 
+export interface MonthlyRealization {
+  month: string;
+  realization: number;
+}
+
 export interface PnLStats {
   totalTrades: number;
   winRate: number;

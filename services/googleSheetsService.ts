@@ -1,11 +1,12 @@
 
-import { TradeSignal, WatchlistItem, User, TradeStatus, LogEntry, ChatMessage, InsightData } from '../types';
+import { TradeSignal, WatchlistItem, User, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from '../types';
 
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzsGgTmJET-j414jqdLl3mQSy0Rm444KOWORIUAnsZHB2SFZVJKuAeHIeoMA-dDEyef/exec'.trim();
 
 export interface SheetData {
   signals: (TradeSignal & { sheetIndex: number })[];
   history: TradeSignal[];
+  monthlyRealization: MonthlyRealization[];
   watchlist: WatchlistItem[];
   users: User[];
   logs: LogEntry[];
@@ -130,6 +131,29 @@ export const fetchSheetData = async (retries = 3): Promise<SheetData | null> => 
       history: (data.history || [])
         .map((s: any, i: number) => parseSignalRow(s, i, 'HIST'))
         .filter((s: any) => s !== null) as TradeSignal[],
+      monthlyRealization: (data.history || [])
+        .reduce((acc: MonthlyRealization[], s: any) => {
+          const month = getVal(s, 'month');
+          const realization = getNum(s, 'realization');
+          if (month && realization !== undefined) {
+            const monthStr = String(month).trim();
+            if (monthStr && !acc.some(m => m.month === monthStr)) {
+              acc.push({ month: monthStr, realization });
+            }
+          }
+          return acc;
+        }, [])
+        .sort((a, b) => {
+          const parseMonth = (s: string) => {
+            const [m, y] = s.split('/');
+            const monthMap: Record<string, number> = {
+              'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4, 'MAY': 5, 'JUN': 6,
+              'JUL': 7, 'AUG': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+            };
+            return (parseInt(y) || 0) * 100 + (monthMap[m.toUpperCase()] || 0);
+          };
+          return parseMonth(a.month) - parseMonth(b.month);
+        }),
       watchlist: (data.watchlist || []).map((w: any) => ({ 
         ...w, 
         symbol: String(getVal(w, 'symbol') || ''),
