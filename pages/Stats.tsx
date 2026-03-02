@@ -210,6 +210,7 @@ const Stats: React.FC<{
         const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
         
         // Generate last 14 months
+        const now = new Date();
         for (let i = 13; i >= 0; i--) {
           const d = new Date();
           d.setDate(1); // Avoid month-end overflow
@@ -220,13 +221,30 @@ const Stats: React.FC<{
           monthChartMap[key] = 0;
         }
 
-        // Fill with actual data
+        // Fill with historical metrics data
         (monthlyRealization || []).forEach(item => {
           const k = item.month.toUpperCase();
           if (monthChartMap[k] !== undefined) {
             monthChartMap[k] = item.realization;
           }
         });
+
+        // Add current month's PnL from history if not already provided by metrics
+        const currentMonthKey = `${monthNames[now.getMonth()]}/${now.getFullYear()}`;
+        if (monthChartMap[currentMonthKey] === 0) {
+          const currentMonthPnL = combinedHistory.reduce((sum, trade) => {
+            const tradeDateStr = normalizeDate(trade);
+            if (!tradeDateStr) return sum;
+            const d = new Date(tradeDateStr);
+            if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+              const qty = Number(trade.quantity && trade.quantity > 0 ? trade.quantity : 1);
+              const pnl = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0) * qty);
+              return sum + pnl;
+            }
+            return sum;
+          }, 0);
+          monthChartMap[currentMonthKey] = currentMonthPnL;
+        }
 
         return Object.entries(monthChartMap).map(([month, realization]) => ({
           month,
