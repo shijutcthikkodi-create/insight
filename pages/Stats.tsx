@@ -188,7 +188,7 @@ const Stats: React.FC<{
       overallPercent: combineWithMetrics(historyOverall, 'overall'),
       intradayPercent: combineWithMetrics(historyIntraday, 'intraday'),
       overnightPercent: combineWithMetrics(historyOvernight, 'overnight'),
-      auditStart: formatDate(earliestAuditDate || windowStartDateStr),
+      auditStart: formatDate(thirtyDaysAgoStr),
       auditEnd: formatDate(latestAuditDate || now.toISOString()),
       auditDays: (() => {
         const currentMonthTrades = combinedHistory.filter(t => {
