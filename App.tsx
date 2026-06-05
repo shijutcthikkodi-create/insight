@@ -67,6 +67,11 @@ const App: React.FC = () => {
   });
 
   const [page, setPage] = useState('dashboard');
+  const pageRef = useRef(page);
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [historySignals, setHistorySignals] = useState<TradeSignal[]>([]); 
@@ -151,6 +156,9 @@ const App: React.FC = () => {
   }, [initAudio]);
 
   const handleRedirectToCard = useCallback((id: string) => {
+    if (pageRef.current === 'admin') {
+      return;
+    }
     setPage('dashboard');
     const scrollTask = () => {
       const el = document.getElementById(`signal-${id}`);
