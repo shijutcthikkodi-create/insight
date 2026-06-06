@@ -335,7 +335,11 @@ const App: React.FC = () => {
         const copied = await copySignalCardToClipboard(signal, headingText);
         
         let notice = `🎯 TARGET LEVEL ${level} ACHIEVED for ${signal.instrument} ${signal.symbol}!\n`;
-        if (copied) {
+        if (copied === 'shared') {
+          notice += `\n✨ The trade card has been shared/saved successfully via your device's native share sheet.`;
+        } else if (copied === 'downloaded') {
+          notice += `\n📥 The trade card raw image has been downloaded to your device for easy upload.`;
+        } else if (copied) {
           notice += `\n✨ A photo copy of the signal (trading card) has been generated and copied to your clipboard.`;
         }
         notice += `\n\nOpening WhatsApp to dispatch the update and paste the card...`;

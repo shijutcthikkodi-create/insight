@@ -712,24 +712,83 @@ export const generateSignalCardCanvas = (signal: TradeSignal, heading: string = 
 };
 
 /**
- * Renders the trading card to a PNG blob and attempts to write it to the clipboard.
- * This enables one-click copy and paste sharing for direct WhatsApp redirection.
+ * Renders the trading card to a PNG blob and attempts to write it to the clipboard,
+ * or share/download on mobile devices.
  */
-export const copySignalCardToClipboard = async (signal: TradeSignal, heading?: string): Promise<boolean> => {
+export const copySignalCardToClipboard = async (signal: TradeSignal, heading?: string): Promise<boolean | string> => {
   try {
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent || '');
+    const canvas = generateSignalCardCanvas(signal, heading);
+
+    if (isMobile) {
+      // 1. Try modern Web Share API on mobile devices first
+      if (typeof navigator.share !== 'undefined' && typeof navigator.canShare !== 'undefined') {
+        try {
+          const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+          if (blob) {
+            const file = new File([blob], `${signal.symbol || 'trade'}_card.png`, { type: 'image/png' });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: `Libra Signal: ${signal.symbol}`,
+                text: `Trading Update: ${signal.instrument} ${signal.symbol}`,
+              });
+              return 'shared';
+            }
+          }
+        } catch (shareErr: any) {
+          console.warn("Native share dismissed or failed, falling back to download:", shareErr);
+          if (shareErr.name === 'AbortError') {
+            return false; // User cancelled the native share sheet
+          }
+        }
+      }
+
+      // 2. Fallback to direct image download on mobile
+      try {
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          a.download = `${signal.instrument || 'Libra'}_${signal.symbol || 'signal'}_card.png`.replace(/\s+/g, '_');
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          return 'downloaded';
+        }
+      } catch (downloadErr) {
+        console.error("Mobile fallback image download failed:", downloadErr);
+      }
+    }
+
+    // Desktop: copy to clipboard standard workflow
     if (typeof navigator.clipboard === 'undefined' || typeof ClipboardItem === 'undefined') {
-      console.warn("Navigator clipboard or ClipboardItem is not supported on this platform.");
+      console.warn("Navigator clipboard or ClipboardItem is not supported on this platform. Falling back to download.");
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `${signal.instrument || 'Libra'}_${signal.symbol || 'signal'}_card.png`.replace(/\s+/g, '_');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return 'downloaded';
+      }
       return false;
     }
     
     // Check if the document has focus before attempting to write to the clipboard.
-    // This prevents the browser from throwing the "Document is not focused" error.
     if (!document.hasFocus()) {
       console.warn("Clipboard copy skipped: Document is not focused.");
       return false;
     }
     
-    const canvas = generateSignalCardCanvas(signal, heading);
     const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
     if (!blob) return false;
     
@@ -743,7 +802,22 @@ export const copySignalCardToClipboard = async (signal: TradeSignal, heading?: s
     } else {
       console.error("Error copy card screenshot to clipboard:", err);
     }
-    return false;
+    
+    // Ultimate desktop fallback: download the graphic card for the user
+    try {
+      const canvas = generateSignalCardCanvas(signal, heading);
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${signal.instrument || 'Libra'}_${signal.symbol || 'signal'}_card.png`.replace(/\s+/g, '_');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return 'downloaded';
+    } catch (e) {
+      return false;
+    }
   }
 };
 

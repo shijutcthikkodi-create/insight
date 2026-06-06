@@ -120,7 +120,13 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
     try {
       const headingText = signal.status === TradeStatus.ALL_TARGET ? "ALL TARGET DONE" : "TARGET ACHIEVED";
       const success = await copySignalCardToClipboard(signal, headingText);
-      if (success) {
+      if (success === 'shared') {
+        // Native share handled the flow nicely!
+        window.open(conf.groupLink, '_blank');
+      } else if (success === 'downloaded') {
+        alert(`📥 PREMIUM PHOTO-CARD DOWNLOADED!\n\nThe trade graphic card has been saved to your device. You can now select and upload this image in your WhatsApp group.\n\nNow opening your WhatsApp Group...`);
+        window.open(conf.groupLink, '_blank');
+      } else if (success) {
         alert(`✨ PREMIUM PHOTO-CARD COPIED SUCCESSFULLY!\n\n1. It is now saved in your clipboard.\n2. Tap paste (Ctrl+V) to share it directly inside your WhatsApp chat.\n\nNow opening your WhatsApp Group...`);
         window.open(conf.groupLink, '_blank');
       } else {

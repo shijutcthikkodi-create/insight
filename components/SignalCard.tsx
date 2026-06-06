@@ -206,7 +206,11 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
                     e.preventDefault();
                     const headingText = signal.status === TradeStatus.ALL_TARGET ? "ALL TARGET DONE" : "TARGET ACHIEVED";
                     const success = await copySignalCardToClipboard(signal, headingText);
-                    if (success) {
+                    if (success === 'shared') {
+                      // Handled by native sharing wizard
+                    } else if (success === 'downloaded') {
+                      alert("📥 PREMIUM PHOTO-CARD DOWNLOADED!\n\nThe trade graphic card has been saved to your device. You can now select and upload this image in your WhatsApp chat.");
+                    } else if (success) {
                       alert("✨ PREMIUM PHOTO-CARD COPIED SUCCESSFULLY!\n\nIt is now saved in your clipboard. Tap paste (Ctrl+V) inside WhatsApp to send it instantly.");
                     } else {
                       alert("⚠️ Browser blocked clipboard image copy automatically. Please capture a screenshot manually.");
