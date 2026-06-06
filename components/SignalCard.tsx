@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowUpRight, ArrowDownRight, Target, Cpu, Edit2, Check, X, TrendingUp, TrendingDown, Clock, ShieldAlert, Zap, AlertTriangle, Trophy, Loader2, History, Briefcase, Activity, Moon, Trash2, RefreshCw, Lock } from 'lucide-react';
 import { TradeSignal, TradeStatus, OptionType, User } from '../types';
 import { analyzeTradeSignal } from '../services/geminiService';
+import { copySignalCardToClipboard } from '../services/whatsappService';
 
 interface SignalCardProps {
   signal: TradeSignal;
@@ -198,6 +199,26 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
         </div>
         <div className="flex flex-col items-end space-y-1.5 pr-2">
             <div className="flex items-center space-x-2">
+              {user.isAdmin && (
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    const headingText = signal.status === TradeStatus.ALL_TARGET ? "ALL TARGET DONE" : "TARGET ACHIEVED";
+                    const success = await copySignalCardToClipboard(signal, headingText);
+                    if (success) {
+                      alert("✨ PREMIUM PHOTO-CARD COPIED SUCCESSFULLY!\n\nIt is now saved in your clipboard. Tap paste (Ctrl+V) inside WhatsApp to send it instantly.");
+                    } else {
+                      alert("⚠️ Browser blocked clipboard image copy automatically. Please capture a screenshot manually.");
+                    }
+                  }}
+                  className="p-1 px-2 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-400 hover:text-white rounded-lg border border-indigo-500/30 transition-colors flex items-center space-x-1 mr-1"
+                  title="Copy graphic trade card image to clipboard"
+                >
+                  <Trophy size={10} className="text-yellow-400" />
+                  <span className="text-[8px] font-black uppercase tracking-wider">Photo-Card 📸</span>
+                </button>
+              )}
               {user.isAdmin && onSignalDelete && (
                 <button 
                   onClick={() => onSignalDelete(signal)}

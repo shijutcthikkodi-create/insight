@@ -5,10 +5,10 @@ import {
   Zap, Loader2, Power, Briefcase, Activity, Moon, ShieldCheck, 
   RefreshCw, MessageSquareCode, Send, Users, ShieldAlert, Clock,
   Search, Edit3, Check, X, Calendar, Key, Shield, RotateCcw, Smartphone,
-  Edit, UserCircle, Eye, EyeOff
+  Edit, UserCircle, Eye, EyeOff, Trophy
 } from 'lucide-react';
 import { updateSheetData } from '../services/googleSheetsService';
-import { getWhatsAppConfig, saveWhatsAppConfig, formatSignalMessage, dispatchWhatsAppMessage, WhatsAppConfig } from '../services/whatsappService';
+import { getWhatsAppConfig, saveWhatsAppConfig, formatSignalMessage, dispatchWhatsAppMessage, WhatsAppConfig, copySignalCardToClipboard } from '../services/whatsappService';
 
 interface AdminProps {
   watchlist: WatchlistItem[];
@@ -100,6 +100,29 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
       if (diffDays <= 5) return 'SOON';
       return 'SAFE';
     } catch (e) { return 'SAFE'; }
+  };
+
+  const [isCopyingPhoto, setIsCopyingPhoto] = useState<string | null>(null);
+
+  const handleManualSignalCardPhotoCopy = async (signal: TradeSignal) => {
+    setIsCopyingPhoto(signal.id);
+    const conf = getWhatsAppConfig();
+    try {
+      const headingText = signal.status === TradeStatus.ALL_TARGET ? "ALL TARGET DONE" : "TARGET ACHIEVED";
+      const success = await copySignalCardToClipboard(signal, headingText);
+      if (success) {
+        alert(`✨ PREMIUM PHOTO-CARD COPIED SUCCESSFULLY!\n\n1. It is now saved in your clipboard.\n2. Tap paste (Ctrl+V) to share it directly inside your WhatsApp chat.\n\nNow opening your WhatsApp Group...`);
+        window.open(conf.groupLink, '_blank');
+      } else {
+        alert(`⚠️ Automatic image copying is restricted on this browser environment.\n\nFallback URL to invite link is: ${conf.groupLink}`);
+        window.open(conf.groupLink, '_blank');
+      }
+    } catch (err) {
+      console.error(err);
+      alert(`⚠️ Failed to copy. Group Invitation Link: ${conf.groupLink}`);
+    } finally {
+      setIsCopyingPhoto(null);
+    }
   };
 
   const handleManualSignalWhatsAppDispatch = async (signal: TradeSignal) => {
@@ -410,6 +433,15 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-2 w-full sm:w-auto justify-end shrink-0">
+                                    <button 
+                                        onClick={() => handleManualSignalCardPhotoCopy(s)}
+                                        disabled={isCopyingPhoto === s.id}
+                                        className="flex items-center space-x-1.5 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md border border-indigo-500/20"
+                                        title="Copy digital trading card image to your clipboard"
+                                    >
+                                        {isCopyingPhoto === s.id ? <Loader2 size={11} className="animate-spin" /> : <Trophy size={11} />}
+                                        <span>Copy Photo-Card 📸</span>
+                                    </button>
                                     <button 
                                         onClick={() => handleManualSignalWhatsAppDispatch(s)}
                                         className="flex items-center space-x-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md"

@@ -11,6 +11,7 @@ import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
 import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
+import { getWhatsAppConfig, formatSignalMessage, copySignalCardToClipboard, dispatchWhatsAppMessage } from './services/whatsappService';
 import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw } from 'lucide-react';
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; 
@@ -323,6 +324,39 @@ const App: React.FC = () => {
     }
   }, [playPushNotificationTone]);
 
+  const triggerTargetHitWhatsAppDispatch = useCallback(async (signal: TradeSignal, level: number) => {
+    if (!user?.isAdmin) return;
+    try {
+      const conf = getWhatsAppConfig();
+      const text = formatSignalMessage(signal, false); 
+      
+      if (conf.gatewayType === 'DIRECT') {
+        const headingText = signal.status === TradeStatus.ALL_TARGET ? "ALL TARGET DONE" : "TARGET ACHIEVED";
+        const copied = await copySignalCardToClipboard(signal, headingText);
+        
+        let notice = `🎯 TARGET LEVEL ${level} ACHIEVED for ${signal.instrument} ${signal.symbol}!\n`;
+        if (copied) {
+          notice += `\n✨ A photo copy of the signal (trading card) has been generated and copied to your clipboard.`;
+        }
+        notice += `\n\nOpening WhatsApp to dispatch the update and paste the card...`;
+        
+        alert(notice);
+        window.open(conf.groupLink, '_blank');
+      } else {
+        await dispatchWhatsAppMessage(text, undefined, signal);
+        
+        if (users && users.length > 0) {
+          const subscribers = users.filter(u => u.phoneNumber && u.phoneNumber.trim().length > 6);
+          for (const sub of subscribers) {
+            await dispatchWhatsAppMessage(text, sub.phoneNumber, signal);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Target auto dispatch error:", err);
+    }
+  }, [user, users]);
+
   const sync = useCallback(async (isInitial = false) => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
@@ -342,6 +376,7 @@ const App: React.FC = () => {
         let isBTSTUpdate = false;
         let targetSid: string | null = null;
         let topIndex = -1;
+        const targetHitsToDispatch: Array<{ s: TradeSignal; val: number }> = [];
         
         let notificationMsg = '';
         let notificationTitle = 'Insight Alert';
@@ -394,6 +429,9 @@ const App: React.FC = () => {
                             }
                          } else if (k === 'targetsHit' && Number(newVal) > Number(oldVal)) {
                             notificationTitle = '🎯 TARGET HIT';
+                             if (!isInitial) {
+                                targetHitsToDispatch.push({ s, val: Number(newVal) });
+                             }
                             notificationMsg = `${s.instrument} ${s.symbol} - LEVEL ${newVal} REACHED!`;
                          } else if (k === 'comment' && newVal !== oldVal) {
                             notificationTitle = 'ADMIN INSTRUCTIONS';
@@ -505,6 +543,11 @@ const App: React.FC = () => {
         setMessages([...(data.messages || [])]);
         setMonthlyRealization([...(data.monthlyRealization || [])]);
         setInsights(reconciledInsights);
+        if (targetHitsToDispatch.length > 0) {
+          targetHitsToDispatch.forEach(item => {
+            triggerTargetHitWhatsAppDispatch(item.s, item.val);
+          });
+        }
         setConnectionStatus('connected');
       } else {
         setConnectionStatus('error');
@@ -515,7 +558,7 @@ const App: React.FC = () => {
     } finally {
       isFetchingRef.current = false;
     }
-  }, [playLongBeep, playUpdateBlip, playIntelAlert, handleRedirectToCard, sendPushNotification]);
+  }, [playLongBeep, playUpdateBlip, playIntelAlert, handleRedirectToCard, sendPushNotification, triggerTargetHitWhatsAppDispatch]);
 
   const handleSignalUpdate = useCallback(async (updated: TradeSignal): Promise<boolean> => {
     const success = await updateSheetData('signals', 'UPDATE_SIGNAL', updated, updated.id);
