@@ -627,6 +627,87 @@ export const generateSignalCardCanvas = (signal: TradeSignal, heading: string = 
   ctx.font = '900 8.5px "Inter", sans-serif';
   ctx.fillText('LIBRA FIN-TECH SOLUTIONS', cardX + cardW - 24, footerY + 16);
   
+  // 12. Elegant Status Stamp Overlaid on Closed Trades
+  if (isExited) {
+    ctx.save();
+    
+    const isTSLHit = isExited && !isAllTarget && (signal.comment?.toUpperCase().includes('TSL') || (signal.status === TradeStatus.EXITED && (Number(signal.pnlPoints || 0)) > 0 && signal.comment?.toUpperCase().includes('TRAILING')));
+    
+    let stampText = 'VIEW CLOSED';
+    let stampColor = '#94a3b8'; // slate-400
+    
+    if (isAllTarget) {
+      stampText = 'COMPLETED';
+      stampColor = '#10b981'; // emerald-500
+    } else if (isSLHit) {
+      stampText = 'INVALIDATED';
+      stampColor = '#f87171'; // rose-400
+    } else if (isTSLHit) {
+      stampText = 'PROTECTION HIT';
+      stampColor = '#f59e0b'; // amber-500
+    }
+    
+    // Position the stamp at the lower side of the card
+    const stampCX = cardX + cardW / 2;
+    const stampCY = cardY + cardH - 125;
+    
+    ctx.translate(stampCX, stampCY);
+    ctx.rotate(-15 * Math.PI / 180);
+    
+    // Measure stamp width based on font size and text length
+    ctx.font = '800 24px "JetBrains Mono", monospace';
+    const textWidth = ctx.measureText(stampText).width;
+    const paddingX = 28;
+    const stampW = Math.max(textWidth + paddingX * 2, 220);
+    const stampH = 74; // Accommodate the secondary "SYSTEM ARCHIVING" text
+    
+    // Draw background (semi-transparent deep slate) with thick borders
+    drawRoundedRect(
+      ctx,
+      -stampW / 2,
+      -stampH / 2,
+      stampW,
+      stampH,
+      8,
+      'rgba(15, 23, 42, 0.9)',
+      stampColor,
+      3.5
+    );
+    
+    // Draw inner inset border contour (matching CSS: inset 0 0 0 2px currentColor)
+    ctx.strokeStyle = stampColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    drawRoundedRect(
+      ctx,
+      -stampW / 2 + 5,
+      -stampH / 2 + 5,
+      stampW - 10,
+      stampH - 10,
+      5,
+      undefined,
+      stampColor,
+      1.5
+    );
+    
+    // Draw Primary Stamp Text
+    ctx.fillStyle = stampColor;
+    ctx.font = '800 22px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(stampText, 0, -2);
+    
+    // Draw Secondary "SYSTEM ARCHIVED" badge text mimicking UI
+    ctx.fillStyle = stampColor;
+    ctx.globalAlpha = 0.6; // opacity-60
+    ctx.font = 'bold 10px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('⚡ SYSTEM ARCHIVED', 0, 8);
+    
+    ctx.restore();
+  }
+  
   return canvas;
 };
 
