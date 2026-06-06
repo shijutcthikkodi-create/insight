@@ -301,7 +301,6 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
       payload.EntryPrice = numericValue;
     } else if (fieldName === 'SL_MANU') {
       payload['SL MANU'] = numericValue;
-      payload.stopLoss = numericValue;
       payload.SL_MANU = numericValue;
     } else if (fieldName === 'manualTSL') {
       payload.manualTSL = numericValue;
