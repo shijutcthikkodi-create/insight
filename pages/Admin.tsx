@@ -517,133 +517,159 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                 ) : (
                     <div className="grid grid-cols-1 gap-3">
                         {activeSignals.map(s => (
-                            <div key={s.id} className={`bg-slate-900 border ${savingId === s.id ? 'border-blue-500' : 'border-slate-800'} p-4 rounded-3xl shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-all`}>
-                                <div className="flex flex-col xl:flex-row xl:items-center gap-4 flex-1 w-full">
-                                    <div className="flex items-center space-x-4 shrink-0 min-w-0">
-                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${s.action === 'BUY' ? 'bg-emerald-900/20 border-emerald-500/30 text-emerald-400' : 'bg-rose-900/20 border-rose-500/30 text-rose-400'}`}>
+                            <div key={s.id} className={`bg-slate-900 border ${savingId === s.id ? 'border-blue-500' : 'border-slate-800'} p-5 rounded-3xl shadow-xl flex flex-col gap-5 transition-all`}>
+                                {/* Header: Instrument name + Metadata */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+                                    <div className="flex items-center space-x-3.5 min-w-0">
+                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border shrink-0 ${s.action === 'BUY' ? 'bg-emerald-900/20 border-emerald-500/30 text-emerald-400' : 'bg-rose-900/20 border-rose-500/30 text-rose-400'}`}>
                                             <Briefcase size={18} />
                                         </div>
                                         <div className="min-w-0">
                                             <h4 className="text-sm font-black text-white font-mono leading-none uppercase truncate">{s.instrument} {s.symbol} {s.type}</h4>
-                                            <p className="text-[9px] text-slate-500 uppercase font-black tracking-tighter mt-1">@ ₹{s.entryPrice} • QTY: {s.quantity || '1'}</p>
+                                            <div className="flex items-center space-x-2 mt-1.5">
+                                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${s.action === 'BUY' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                                                    {s.action}
+                                                </span>
+                                                {s.isBTST && (
+                                                    <span className="bg-amber-500/15 border border-amber-500/30 text-amber-500 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider flex items-center">
+                                                        <Moon size={10} className="mr-1" /> OVERNIGHT
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     
-                                    {/* Parameter Update Dashboard */}
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
-                                        {/* 1. CMP */}
-                                        <div className="flex items-center space-x-1.5 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-2.5 py-1.5 justify-between">
-                                            <div className="flex flex-col min-w-0 flex-1">
-                                                <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-wider leading-none">CMP</span>
-                                                <input 
-                                                    type="number"
-                                                    step="any"
-                                                    value={editedCmpValues[s.id] ?? (s.cmp != null ? String(s.cmp) : '')}
-                                                    onChange={e => setEditedCmpValues({ ...editedCmpValues, [s.id]: e.target.value })}
-                                                    placeholder="0.00"
-                                                    className="w-full bg-transparent border-none text-[11px] text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-0.5"
-                                                />
-                                            </div>
-                                            <button 
-                                                onClick={() => handleUpdateCmp(s, editedCmpValues[s.id] ?? (s.cmp != null ? String(s.cmp) : ''))}
-                                                disabled={savingCmpId === s.id}
-                                                className="p-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
-                                                title="Set CMP value on sheet"
-                                            >
-                                                {savingCmpId === s.id ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
-                                            </button>
-                                        </div>
-
-                                        {/* 2. BASE LEVEL (entryPrice) */}
-                                        <div className="flex items-center space-x-1.5 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-2.5 py-1.5 justify-between">
-                                            <div className="flex flex-col min-w-0 flex-1">
-                                                <span className="text-[7.5px] font-black text-blue-400/80 uppercase tracking-wider leading-none">BASE LEVEL</span>
-                                                <input 
-                                                    type="number"
-                                                    step="any"
-                                                    value={editedEntryValues[s.id] ?? (s.entryPrice != null ? String(s.entryPrice) : '')}
-                                                    onChange={e => setEditedEntryValues({ ...editedEntryValues, [s.id]: e.target.value })}
-                                                    placeholder="0.00"
-                                                    className="w-full bg-transparent border-none text-[11px] text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-0.5"
-                                                />
-                                            </div>
-                                            <button 
-                                                onClick={() => handleUpdateSignalField(s, 'entryPrice', editedEntryValues[s.id] ?? (s.entryPrice != null ? String(s.entryPrice) : ''))}
-                                                disabled={savingFieldStates[`${s.id}-entryPrice`]}
-                                                className="p-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
-                                                title="Set entryPrice parameter on sheet"
-                                            >
-                                                {savingFieldStates[`${s.id}-entryPrice`] ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
-                                            </button>
-                                        </div>
-
-                                        {/* 3. INVALIDATION POINT (SL MANU) */}
-                                        <div className="flex items-center space-x-1.5 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-2.5 py-1.5 justify-between">
-                                            <div className="flex flex-col min-w-0 flex-1">
-                                                <span className="text-[7.5px] font-black text-rose-400/80 uppercase tracking-wider leading-none">SL MANU</span>
-                                                <input 
-                                                    type="number"
-                                                    step="any"
-                                                    value={editedSlValues[s.id] ?? (s.stopLoss != null ? String(s.stopLoss) : '')}
-                                                    onChange={e => setEditedSlValues({ ...editedSlValues, [s.id]: e.target.value })}
-                                                    placeholder="0.00"
-                                                    className="w-full bg-transparent border-none text-[11px] text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-0.5"
-                                                />
-                                            </div>
-                                            <button 
-                                                onClick={() => handleUpdateSignalField(s, 'SL_MANU', editedSlValues[s.id] ?? (s.stopLoss != null ? String(s.stopLoss) : ''))}
-                                                disabled={savingFieldStates[`${s.id}-SL_MANU`]}
-                                                className="p-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
-                                                title="Set stopLoss (SL MANU) parameter on sheet"
-                                            >
-                                                {savingFieldStates[`${s.id}-SL_MANU`] ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
-                                            </button>
-                                        </div>
-
-                                        {/* 4. PROTECTION (manualTSL) */}
-                                        <div className="flex items-center space-x-1.5 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-2.5 py-1.5 justify-between">
-                                            <div className="flex flex-col min-w-0 flex-1">
-                                                <span className="text-[7.5px] font-black text-amber-400/80 uppercase tracking-wider leading-none">manualTSL</span>
-                                                <input 
-                                                    type="number"
-                                                    step="any"
-                                                    value={editedTslValues[s.id] ?? (s.trailingSL != null ? String(s.trailingSL) : '')}
-                                                    onChange={e => setEditedTslValues({ ...editedTslValues, [s.id]: e.target.value })}
-                                                    placeholder="0.00"
-                                                    className="w-full bg-transparent border-none text-[11px] text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-0.5"
-                                                />
-                                            </div>
-                                            <button 
-                                                onClick={() => handleUpdateSignalField(s, 'manualTSL', editedTslValues[s.id] ?? (s.trailingSL != null ? String(s.trailingSL) : ''))}
-                                                disabled={savingFieldStates[`${s.id}-manualTSL`]}
-                                                className="p-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
-                                                title="Set trailingSL (manualTSL) parameter on sheet"
-                                            >
-                                                {savingFieldStates[`${s.id}-manualTSL`] ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
-                                            </button>
-                                        </div>
+                                    <div className="flex items-center space-x-2 shrink-0">
+                                        <span className="text-[9px] font-black text-slate-400 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800/80">
+                                            QTY: {s.quantity || '1'}
+                                        </span>
+                                        <span className="text-[9px] font-black text-slate-400 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800/80 uppercase">
+                                            {s.status}
+                                        </span>
                                     </div>
                                 </div>
                                 
-                                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto lg:justify-end shrink-0">
+                                {/* Parameter Update Dashboard - Takes full width of the card */}
+                                <div className="grid grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-3.5 w-full">
+                                    {/* 1. CMP */}
+                                    <div className="flex items-center space-x-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-3.5 py-2.5 justify-between">
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                            <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-wider leading-none">CMP</span>
+                                            <input 
+                                                type="number"
+                                                step="any"
+                                                value={editedCmpValues[s.id] ?? (s.cmp != null ? String(s.cmp) : '')}
+                                                onChange={e => setEditedCmpValues({ ...editedCmpValues, [s.id]: e.target.value })}
+                                                placeholder="0.00"
+                                                className="w-full bg-transparent border-none text-xs text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-1"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => handleUpdateCmp(s, editedCmpValues[s.id] ?? (s.cmp != null ? String(s.cmp) : ''))}
+                                            disabled={savingCmpId === s.id}
+                                            className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
+                                            title="Set CMP value on sheet"
+                                        >
+                                            {savingCmpId === s.id ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                                        </button>
+                                    </div>
+
+                                    {/* 2. BASE LEVEL (entryPrice) */}
+                                    <div className="flex items-center space-x-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-3.5 py-2.5 justify-between">
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                            <span className="text-[7.5px] font-black text-blue-400/80 uppercase tracking-wider leading-none">BASE LEVEL</span>
+                                            <input 
+                                                type="number"
+                                                step="any"
+                                                value={editedEntryValues[s.id] ?? (s.entryPrice != null ? String(s.entryPrice) : '')}
+                                                onChange={e => setEditedEntryValues({ ...editedEntryValues, [s.id]: e.target.value })}
+                                                placeholder="0.00"
+                                                className="w-full bg-transparent border-none text-xs text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-1"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => handleUpdateSignalField(s, 'entryPrice', editedEntryValues[s.id] ?? (s.entryPrice != null ? String(s.entryPrice) : ''))}
+                                            disabled={savingFieldStates[`${s.id}-entryPrice`]}
+                                            className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
+                                            title="Set entryPrice parameter on sheet"
+                                        >
+                                            {savingFieldStates[`${s.id}-entryPrice`] ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                                        </button>
+                                    </div>
+
+                                    {/* 3. INVALIDATION POINT (SL MANU) */}
+                                    <div className="flex items-center space-x-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-3.5 py-2.5 justify-between">
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                            <span className="text-[7.5px] font-black text-rose-400/80 uppercase tracking-wider leading-none">SL MANU</span>
+                                            <input 
+                                                type="number"
+                                                step="any"
+                                                value={editedSlValues[s.id] ?? (s.stopLoss != null ? String(s.stopLoss) : '')}
+                                                onChange={e => setEditedSlValues({ ...editedSlValues, [s.id]: e.target.value })}
+                                                placeholder="0.00"
+                                                className="w-full bg-transparent border-none text-xs text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-1"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => handleUpdateSignalField(s, 'SL_MANU', editedSlValues[s.id] ?? (s.stopLoss != null ? String(s.stopLoss) : ''))}
+                                            disabled={savingFieldStates[`${s.id}-SL_MANU`]}
+                                            className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
+                                            title="Set stopLoss (SL MANU) parameter on sheet"
+                                        >
+                                            {savingFieldStates[`${s.id}-SL_MANU`] ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                                        </button>
+                                    </div>
+
+                                    {/* 4. PROTECTION (manualTSL) */}
+                                    <div className="flex items-center space-x-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl px-3.5 py-2.5 justify-between">
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                            <span className="text-[7.5px] font-black text-amber-400/80 uppercase tracking-wider leading-none">manualTSL</span>
+                                            <input 
+                                                type="number"
+                                                step="any"
+                                                value={editedTslValues[s.id] ?? (s.trailingSL != null ? String(s.trailingSL) : '')}
+                                                onChange={e => setEditedTslValues({ ...editedTslValues, [s.id]: e.target.value })}
+                                                placeholder="0.00"
+                                                className="w-full bg-transparent border-none text-xs text-slate-200 focus:outline-none font-bold font-mono placeholder:text-slate-800 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none mt-1"
+                                            />
+                                        </div>
+                                        <button 
+                                            onClick={() => handleUpdateSignalField(s, 'manualTSL', editedTslValues[s.id] ?? (s.trailingSL != null ? String(s.trailingSL) : ''))}
+                                            disabled={savingFieldStates[`${s.id}-manualTSL`]}
+                                            className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-all shadow-md active:scale-95 shrink-0"
+                                            title="Set trailingSL (manualTSL) parameter on sheet"
+                                        >
+                                            {savingFieldStates[`${s.id}-manualTSL`] ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                {/* Footer Action Tray */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3.5 border-t border-slate-800">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <button 
+                                            onClick={() => handleManualSignalCardPhotoCopy(s)}
+                                            disabled={isCopyingPhoto === s.id}
+                                            className="flex items-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md active:scale-95 border border-indigo-500/20"
+                                            title="Copy digital trading card image to your clipboard"
+                                        >
+                                            {isCopyingPhoto === s.id ? <Loader2 size={11} className="animate-spin" /> : <Trophy size={11} />}
+                                            <span>Copy Photo-Card 📸</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => handleManualSignalWhatsAppDispatch(s)}
+                                            className="flex items-center space-x-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md active:scale-95"
+                                            title="Dispatch current signal targets and metrics to WhatsApp"
+                                        >
+                                            <Send size={11} />
+                                            <span>Dispatch WA</span>
+                                        </button>
+                                    </div>
                                     <button 
-                                        onClick={() => handleManualSignalCardPhotoCopy(s)}
-                                        disabled={isCopyingPhoto === s.id}
-                                        className="flex items-center space-x-1.5 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md border border-indigo-500/20"
-                                        title="Copy digital trading card image to your clipboard"
+                                        onClick={() => handleUrgentExit(s)} 
+                                        disabled={isSaving} 
+                                        className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider shadow-xl shadow-rose-900/40 flex items-center justify-center space-x-1.5 active:scale-95 sm:ml-auto"
                                     >
-                                        {isCopyingPhoto === s.id ? <Loader2 size={11} className="animate-spin" /> : <Trophy size={11} />}
-                                        <span>Copy Photo-Card 📸</span>
-                                    </button>
-                                    <button 
-                                        onClick={() => handleManualSignalWhatsAppDispatch(s)}
-                                        className="flex items-center space-x-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md"
-                                        title="Dispatch current signal targets and metrics to WhatsApp"
-                                    >
-                                        <Send size={11} />
-                                        <span>Dispatch WA</span>
-                                    </button>
-                                    <button onClick={() => handleUrgentExit(s)} disabled={isSaving} className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-wider shadow-xl shadow-rose-900/40 flex items-center space-x-1">
                                         {savingId === s.id ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
                                         <span>URGENT EXIT</span>
                                     </button>
