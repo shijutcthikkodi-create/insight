@@ -109,28 +109,43 @@ const App: React.FC = () => {
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFetchingRef = useRef(false);
 
-  const initAudio = useCallback(async () => {
+  const getOrRebuildAudioContext = useCallback(async (): Promise<AudioContext | null> => {
+    if (!soundEnabled) return null;
     try {
       const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (!audioCtxRef.current && AudioCtx) {
+      if (!AudioCtx) return null;
+      
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
         audioCtxRef.current = new AudioCtx();
       }
       
-      if (audioCtxRef.current) {
-        if (audioCtxRef.current.state === 'suspended') {
-          await audioCtxRef.current.resume();
+      const ctx = audioCtxRef.current;
+      if (ctx && ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch (e) {
+          console.warn("Failed to resume AudioContext dynamically:", e);
         }
-        setAudioInitialized(true);
-      } else {
-        // Fallback for browsers with no AudioContext support
+      }
+      
+      if (ctx) {
         setAudioInitialized(true);
       }
+      return ctx;
     } catch (e) {
-      console.error("Audio initialization sequence failed:", e);
-      // Force initialization anyway so the UI isn't stuck
+      console.error("Error rebuilding AudioContext dynamically:", e);
+      return null;
+    }
+  }, [soundEnabled]);
+
+  const initAudio = useCallback(async () => {
+    const ctx = await getOrRebuildAudioContext();
+    if (ctx) {
+      setAudioInitialized(true);
+    } else {
       setAudioInitialized(true);
     }
-  }, []);
+  }, [getOrRebuildAudioContext]);
 
   const requestNotificationPermission = useCallback(async () => {
     if (typeof Notification === 'undefined') {
@@ -192,12 +207,15 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const playPushNotificationTone = useCallback(() => {
-    if (!soundEnabled || !audioInitialized) return;
+  const playPushNotificationTone = useCallback(async () => {
+    if (!soundEnabled) return;
     try {
-      const ctx = audioCtxRef.current;
+      const ctx = await getOrRebuildAudioContext();
       if (!ctx) return;
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) {}
+      }
+      if (ctx.state !== 'running') return;
       const now = ctx.currentTime;
       
       const playTone = (freq: number, start: number, duration: number, vol: number = 0.3) => {
@@ -217,14 +235,17 @@ const App: React.FC = () => {
       playTone(3200, 0, 0.15, 0.2);
       playTone(2800, 0.1, 0.2, 0.15);
     } catch (e) {}
-  }, [soundEnabled, audioInitialized]);
+  }, [soundEnabled, getOrRebuildAudioContext]);
 
-  const playUpdateBlip = useCallback(() => {
-    if (!soundEnabled || !audioInitialized) return;
+  const playUpdateBlip = useCallback(async () => {
+    if (!soundEnabled) return;
     try {
-      const ctx = audioCtxRef.current;
+      const ctx = await getOrRebuildAudioContext();
       if (!ctx) return;
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) {}
+      }
+      if (ctx.state !== 'running') return;
       
       const playTone = (freq: number, start: number, dur: number) => {
         const osc = ctx.createOscillator();
@@ -243,14 +264,17 @@ const App: React.FC = () => {
       playTone(2200, 0, 0.08);
       playTone(1800, 0.06, 0.12);
     } catch (e) {}
-  }, [soundEnabled, audioInitialized]);
+  }, [soundEnabled, getOrRebuildAudioContext]);
 
-  const playIntelAlert = useCallback(() => {
-    if (!soundEnabled || !audioInitialized) return;
+  const playIntelAlert = useCallback(async () => {
+    if (!soundEnabled) return;
     try {
-      const ctx = audioCtxRef.current;
+      const ctx = await getOrRebuildAudioContext();
       if (!ctx) return;
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) {}
+      }
+      if (ctx.state !== 'running') return;
       const now = ctx.currentTime;
       
       const delays = [0, 0.6, 1.2];
@@ -271,15 +295,19 @@ const App: React.FC = () => {
         osc.stop(now + delay + 0.45);
       });
     } catch (e) {}
-  }, [soundEnabled, audioInitialized]);
+  }, [soundEnabled, getOrRebuildAudioContext]);
 
-  const playLongBeep = useCallback((isCritical = false, isBTST = false) => {
-    if (!soundEnabled || !audioInitialized) return;
+  const playLongBeep = useCallback(async (isCritical = false, isBTST = false) => {
+    if (!soundEnabled) return;
     stopAlertAudio();
     try {
-      const ctx = audioCtxRef.current;
+      const ctx = await getOrRebuildAudioContext();
       if (!ctx) return;
-      if (ctx.state === 'suspended') ctx.resume();
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) {}
+      }
+      if (ctx.state !== 'running') return;
+      
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       const baseFreq = isBTST ? 980 : (isCritical ? 440 : 880);
@@ -301,13 +329,30 @@ const App: React.FC = () => {
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
+      osc.stop(now + 7.5);
+      
       activeOscillatorRef.current = osc;
       activeGainRef.current = gain;
       alertTimeoutRef.current = setTimeout(() => stopAlertAudio(), MAJOR_ALERT_DURATION);
     } catch (e) {
       console.error("Long beep audio failed", e);
     }
-  }, [soundEnabled, audioInitialized, stopAlertAudio]);
+  }, [soundEnabled, stopAlertAudio, getOrRebuildAudioContext]);
+
+  const handleRepairAudio = useCallback(async () => {
+    setSoundEnabled(true);
+    localStorage.setItem('libra_sound_enabled', 'true');
+    // Force complete recreation
+    if (audioCtxRef.current) {
+      try { await audioCtxRef.current.close(); } catch (e) {}
+      audioCtxRef.current = null;
+    }
+    await initAudio();
+    // Play test update blip so they can confirm it immediately
+    setTimeout(() => {
+      playUpdateBlip();
+    }, 150);
+  }, [initAudio, playUpdateBlip]);
 
   const sendPushNotification = useCallback((title: string, body: string) => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -620,8 +665,15 @@ const App: React.FC = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
     localStorage.setItem('libra_sound_enabled', String(next));
-    if (!next) stopAlertAudio();
-    if (next && !audioInitialized) initAudio();
+    if (!next) {
+      stopAlertAudio();
+    } else {
+      initAudio().then(() => {
+        setTimeout(() => {
+          playUpdateBlip();
+        }, 150);
+      });
+    }
   };
 
   const handleAcceptDisclosure = () => {
@@ -740,7 +792,7 @@ const App: React.FC = () => {
       watchlist={watchlist}
       activeWatchlistAlerts={activeWatchlistAlerts}
     >
-      {user && !audioInitialized && (
+      {user && soundEnabled && !audioInitialized && (
         <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
           <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white mb-6 animate-pulse shadow-[0_0_40px_rgba(37,99,235,0.4)]">
             <Zap size={40} />
