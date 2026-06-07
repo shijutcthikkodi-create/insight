@@ -103,6 +103,17 @@ const App: React.FC = () => {
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFetchingRef = useRef(false);
 
+  const pageRef = useRef(page);
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   const initAudio = useCallback(async () => {
     try {
       const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
@@ -151,6 +162,9 @@ const App: React.FC = () => {
   }, [initAudio]);
 
   const handleRedirectToCard = useCallback((id: string) => {
+    if (userRef.current?.isAdmin && pageRef.current === 'admin') {
+      return;
+    }
     setPage('dashboard');
     const scrollTask = () => {
       const el = document.getElementById(`signal-${id}`);
