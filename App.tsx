@@ -9,9 +9,10 @@ import About from './pages/About';
 import Admin from './pages/Admin';
 import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
+import { NewsFeed } from './pages/NewsFeed';
 import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
-import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw } from 'lucide-react';
+import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw, Newspaper } from 'lucide-react';
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; 
 const SESSION_KEY = 'libra_user_session';
@@ -768,6 +769,7 @@ const App: React.FC = () => {
       </a>
 
       {page === 'dashboard' && <Dashboard watchlist={watchlist} signals={signals} messages={messages} user={user} granularHighlights={granularHighlights} activeMajorAlerts={activeMajorAlerts} activeWatchlistAlerts={activeWatchlistAlerts} activeIntelAlert={activeIntelAlert} onSignalUpdate={handleSignalUpdate} />}
+      {page === 'news' && <NewsFeed soundFn={playUpdateBlip} />}
       {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
       {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}
@@ -775,22 +777,26 @@ const App: React.FC = () => {
       {page === 'about' && <About />}
       {user?.isAdmin && page === 'admin' && <Admin watchlist={watchlist} onUpdateWatchlist={() => {}} signals={signals} onUpdateSignals={() => {}} users={users} onUpdateUsers={() => {}} logs={logs} messages={messages} onNavigate={setPage} onHardSync={() => { deadSignalsRef.current.clear(); deadInsightsRef.current.clear(); return sync(true); }} />}
       
-      <div className="md:hidden fixed bottom-4 left-4 right-4 z-[100] bg-slate-900/90 backdrop-blur-xl border border-slate-800 px-6 py-4 flex justify-around items-center rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        <button onClick={() => setPage('dashboard')} className={`flex flex-col items-center space-y-1 transition-all ${page === 'dashboard' ? 'text-blue-500' : 'text-slate-500'}`}>
-          <Radio size={24} strokeWidth={page === 'dashboard' ? 3 : 2} />
-          <span className="text-[10px] font-bold uppercase tracking-tighter text-center">Analysis</span>
+      <div className="md:hidden fixed bottom-4 left-4 right-4 z-[100] bg-slate-900/90 backdrop-blur-xl border border-slate-800 px-4 py-3 flex justify-around items-center rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-x-auto no-scrollbar">
+        <button onClick={() => setPage('dashboard')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'dashboard' ? 'text-blue-500' : 'text-slate-500'}`}>
+          <Radio size={20} strokeWidth={page === 'dashboard' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Analysis</span>
         </button>
-        <button onClick={() => setPage('insights')} className={`flex flex-col items-center space-y-1 transition-all ${page === 'insights' ? 'text-rose-500' : 'text-slate-500'}`}>
-          <Flame size={24} strokeWidth={page === 'insights' ? 3 : 2} />
-          <span className="text-[10px] font-bold uppercase tracking-tighter text-center">Alpha</span>
+        <button onClick={() => setPage('news')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'news' ? 'text-blue-400' : 'text-slate-500'}`}>
+          <Newspaper size={20} strokeWidth={page === 'news' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">News</span>
         </button>
-        <button onClick={() => setPage('booked')} className={`flex flex-col items-center space-y-1 transition-all ${page === 'booked' ? 'text-emerald-500' : 'text-slate-500'}`}>
-          <CheckCircle size={24} strokeWidth={page === 'booked' ? 3 : 2} />
-          <span className="text-[10px] font-bold uppercase tracking-tighter text-center">Outcomes</span>
+        <button onClick={() => setPage('insights')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'insights' ? 'text-rose-500' : 'text-slate-500'}`}>
+          <Flame size={20} strokeWidth={page === 'insights' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Alpha</span>
         </button>
-        <button onClick={() => setPage('stats')} className={`flex flex-col items-center space-y-1 transition-all ${page === 'stats' ? 'text-yellow-500' : 'text-slate-500'}`}>
-          <BarChart2 size={24} strokeWidth={page === 'stats' ? 3 : 2} />
-          <span className="text-[10px] font-bold uppercase tracking-tighter text-center">Metrics</span>
+        <button onClick={() => setPage('booked')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'booked' ? 'text-emerald-500' : 'text-slate-500'}`}>
+          <CheckCircle size={20} strokeWidth={page === 'booked' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Outcomes</span>
+        </button>
+        <button onClick={() => setPage('stats')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'stats' ? 'text-yellow-500' : 'text-slate-500'}`}>
+          <BarChart2 size={20} strokeWidth={page === 'stats' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Metrics</span>
         </button>
       </div>
     </Layout>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Logo from './Logo';
-import { Menu, X, BarChart2, Radio, ShieldAlert, LogOut, FileText, User as UserIcon, Scale, Clock, CheckCircle, AlertCircle, EyeOff, ShieldCheck, List, TrendingUp, TrendingDown, BellRing, Zap, ArrowUpCircle, ExternalLink, Briefcase, BookOpen, Info, Flame } from 'lucide-react';
+import { Menu, X, BarChart2, Radio, ShieldAlert, LogOut, FileText, User as UserIcon, Scale, Clock, CheckCircle, AlertCircle, EyeOff, ShieldCheck, List, TrendingUp, TrendingDown, BellRing, Zap, ArrowUpCircle, ExternalLink, Briefcase, BookOpen, Info, Flame, Newspaper } from 'lucide-react';
 import { User, WatchlistItem } from '../types';
 import { FOOTER_TEXT, BRANDING_TEXT } from '../constants';
 
@@ -247,7 +247,8 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, 
 
         <nav className="flex-1 px-4 overflow-y-auto no-scrollbar pb-8">
           <NavItem page="dashboard" icon={Radio} label="Live Analysis Feed" />
-          <NavItem page="insights" icon={Flame} label="Market Insights" isNew />
+          <NavItem page="news" icon={Newspaper} label="Live News Wire" isNew />
+          <NavItem page="insights" icon={Flame} label="Market Insights" />
           <NavItem page="booked" icon={CheckCircle} label="Observed Outcomes" />
           <NavItem page="stats" icon={BarChart2} label="Performance Metrics" />
           <NavItem page="rules" icon={ShieldAlert} label="Rules & Disclaimer" />
