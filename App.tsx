@@ -11,7 +11,6 @@ import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
 import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
-import { getWhatsAppConfig, formatSignalMessage, copySignalCardToClipboard, dispatchWhatsAppMessage } from './services/whatsappService';
 import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw } from 'lucide-react';
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; 
@@ -68,11 +67,6 @@ const App: React.FC = () => {
   });
 
   const [page, setPage] = useState('dashboard');
-  const pageRef = useRef(page);
-  useEffect(() => {
-    pageRef.current = page;
-  }, [page]);
-
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [historySignals, setHistorySignals] = useState<TradeSignal[]>([]); 
@@ -109,43 +103,28 @@ const App: React.FC = () => {
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFetchingRef = useRef(false);
 
-  const getOrRebuildAudioContext = useCallback(async (): Promise<AudioContext | null> => {
-    if (!soundEnabled) return null;
+  const initAudio = useCallback(async () => {
     try {
       const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return null;
-      
-      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      if (!audioCtxRef.current && AudioCtx) {
         audioCtxRef.current = new AudioCtx();
       }
       
-      const ctx = audioCtxRef.current;
-      if (ctx && ctx.state === 'suspended') {
-        try {
-          await ctx.resume();
-        } catch (e) {
-          console.warn("Failed to resume AudioContext dynamically:", e);
+      if (audioCtxRef.current) {
+        if (audioCtxRef.current.state === 'suspended') {
+          await audioCtxRef.current.resume();
         }
-      }
-      
-      if (ctx) {
+        setAudioInitialized(true);
+      } else {
+        // Fallback for browsers with no AudioContext support
         setAudioInitialized(true);
       }
-      return ctx;
     } catch (e) {
-      console.error("Error rebuilding AudioContext dynamically:", e);
-      return null;
-    }
-  }, [soundEnabled]);
-
-  const initAudio = useCallback(async () => {
-    const ctx = await getOrRebuildAudioContext();
-    if (ctx) {
-      setAudioInitialized(true);
-    } else {
+      console.error("Audio initialization sequence failed:", e);
+      // Force initialization anyway so the UI isn't stuck
       setAudioInitialized(true);
     }
-  }, [getOrRebuildAudioContext]);
+  }, []);
 
   const requestNotificationPermission = useCallback(async () => {
     if (typeof Notification === 'undefined') {
@@ -172,9 +151,6 @@ const App: React.FC = () => {
   }, [initAudio]);
 
   const handleRedirectToCard = useCallback((id: string) => {
-    if (pageRef.current === 'admin') {
-      return;
-    }
     setPage('dashboard');
     const scrollTask = () => {
       const el = document.getElementById(`signal-${id}`);
@@ -207,15 +183,12 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const playPushNotificationTone = useCallback(async () => {
-    if (!soundEnabled) return;
+  const playPushNotificationTone = useCallback(() => {
+    if (!soundEnabled || !audioInitialized) return;
     try {
-      const ctx = await getOrRebuildAudioContext();
+      const ctx = audioCtxRef.current;
       if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) {}
-      }
-      if (ctx.state !== 'running') return;
+      if (ctx.state === 'suspended') ctx.resume();
       const now = ctx.currentTime;
       
       const playTone = (freq: number, start: number, duration: number, vol: number = 0.3) => {
@@ -235,17 +208,14 @@ const App: React.FC = () => {
       playTone(3200, 0, 0.15, 0.2);
       playTone(2800, 0.1, 0.2, 0.15);
     } catch (e) {}
-  }, [soundEnabled, getOrRebuildAudioContext]);
+  }, [soundEnabled, audioInitialized]);
 
-  const playUpdateBlip = useCallback(async () => {
-    if (!soundEnabled) return;
+  const playUpdateBlip = useCallback(() => {
+    if (!soundEnabled || !audioInitialized) return;
     try {
-      const ctx = await getOrRebuildAudioContext();
+      const ctx = audioCtxRef.current;
       if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) {}
-      }
-      if (ctx.state !== 'running') return;
+      if (ctx.state === 'suspended') ctx.resume();
       
       const playTone = (freq: number, start: number, dur: number) => {
         const osc = ctx.createOscillator();
@@ -264,17 +234,14 @@ const App: React.FC = () => {
       playTone(2200, 0, 0.08);
       playTone(1800, 0.06, 0.12);
     } catch (e) {}
-  }, [soundEnabled, getOrRebuildAudioContext]);
+  }, [soundEnabled, audioInitialized]);
 
-  const playIntelAlert = useCallback(async () => {
-    if (!soundEnabled) return;
+  const playIntelAlert = useCallback(() => {
+    if (!soundEnabled || !audioInitialized) return;
     try {
-      const ctx = await getOrRebuildAudioContext();
+      const ctx = audioCtxRef.current;
       if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) {}
-      }
-      if (ctx.state !== 'running') return;
+      if (ctx.state === 'suspended') ctx.resume();
       const now = ctx.currentTime;
       
       const delays = [0, 0.6, 1.2];
@@ -295,19 +262,15 @@ const App: React.FC = () => {
         osc.stop(now + delay + 0.45);
       });
     } catch (e) {}
-  }, [soundEnabled, getOrRebuildAudioContext]);
+  }, [soundEnabled, audioInitialized]);
 
-  const playLongBeep = useCallback(async (isCritical = false, isBTST = false) => {
-    if (!soundEnabled) return;
+  const playLongBeep = useCallback((isCritical = false, isBTST = false) => {
+    if (!soundEnabled || !audioInitialized) return;
     stopAlertAudio();
     try {
-      const ctx = await getOrRebuildAudioContext();
+      const ctx = audioCtxRef.current;
       if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) {}
-      }
-      if (ctx.state !== 'running') return;
-      
+      if (ctx.state === 'suspended') ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       const baseFreq = isBTST ? 980 : (isCritical ? 440 : 880);
@@ -329,30 +292,13 @@ const App: React.FC = () => {
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(now + 7.5);
-      
       activeOscillatorRef.current = osc;
       activeGainRef.current = gain;
       alertTimeoutRef.current = setTimeout(() => stopAlertAudio(), MAJOR_ALERT_DURATION);
     } catch (e) {
       console.error("Long beep audio failed", e);
     }
-  }, [soundEnabled, stopAlertAudio, getOrRebuildAudioContext]);
-
-  const handleRepairAudio = useCallback(async () => {
-    setSoundEnabled(true);
-    localStorage.setItem('libra_sound_enabled', 'true');
-    // Force complete recreation
-    if (audioCtxRef.current) {
-      try { await audioCtxRef.current.close(); } catch (e) {}
-      audioCtxRef.current = null;
-    }
-    await initAudio();
-    // Play test update blip so they can confirm it immediately
-    setTimeout(() => {
-      playUpdateBlip();
-    }, 150);
-  }, [initAudio, playUpdateBlip]);
+  }, [soundEnabled, audioInitialized, stopAlertAudio]);
 
   const sendPushNotification = useCallback((title: string, body: string) => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -368,43 +314,6 @@ const App: React.FC = () => {
       }
     }
   }, [playPushNotificationTone]);
-
-  const triggerTargetHitWhatsAppDispatch = useCallback(async (signal: TradeSignal, level: number) => {
-    if (!user?.isAdmin) return;
-    try {
-      const conf = getWhatsAppConfig();
-      const text = formatSignalMessage(signal, false); 
-      
-      if (conf.gatewayType === 'DIRECT') {
-        const headingText = signal.status === TradeStatus.ALL_TARGET ? "ALL TARGET DONE" : "TARGET ACHIEVED";
-        const copied = await copySignalCardToClipboard(signal, headingText);
-        
-        let notice = `🎯 TARGET LEVEL ${level} ACHIEVED for ${signal.instrument} ${signal.symbol}!\n`;
-        if (copied === 'shared') {
-          notice += `\n✨ The trade card has been shared/saved successfully via your device's native share sheet.`;
-        } else if (copied === 'downloaded') {
-          notice += `\n📥 The trade card raw image has been downloaded to your device for easy upload.`;
-        } else if (copied) {
-          notice += `\n✨ A photo copy of the signal (trading card) has been generated and copied to your clipboard.`;
-        }
-        notice += `\n\nOpening WhatsApp to dispatch the update and paste the card...`;
-        
-        alert(notice);
-        window.open(conf.groupLink, '_blank');
-      } else {
-        await dispatchWhatsAppMessage(text, undefined, signal);
-        
-        if (users && users.length > 0) {
-          const subscribers = users.filter(u => u.phoneNumber && u.phoneNumber.trim().length > 6);
-          for (const sub of subscribers) {
-            await dispatchWhatsAppMessage(text, sub.phoneNumber, signal);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Target auto dispatch error:", err);
-    }
-  }, [user, users]);
 
   const sync = useCallback(async (isInitial = false) => {
     if (isFetchingRef.current) return;
@@ -425,7 +334,6 @@ const App: React.FC = () => {
         let isBTSTUpdate = false;
         let targetSid: string | null = null;
         let topIndex = -1;
-        const targetHitsToDispatch: Array<{ s: TradeSignal; val: number }> = [];
         
         let notificationMsg = '';
         let notificationTitle = 'Insight Alert';
@@ -478,9 +386,6 @@ const App: React.FC = () => {
                             }
                          } else if (k === 'targetsHit' && Number(newVal) > Number(oldVal)) {
                             notificationTitle = '🎯 TARGET HIT';
-                             if (!isInitial) {
-                                targetHitsToDispatch.push({ s, val: Number(newVal) });
-                             }
                             notificationMsg = `${s.instrument} ${s.symbol} - LEVEL ${newVal} REACHED!`;
                          } else if (k === 'comment' && newVal !== oldVal) {
                             notificationTitle = 'ADMIN INSTRUCTIONS';
@@ -592,11 +497,6 @@ const App: React.FC = () => {
         setMessages([...(data.messages || [])]);
         setMonthlyRealization([...(data.monthlyRealization || [])]);
         setInsights(reconciledInsights);
-        if (targetHitsToDispatch.length > 0) {
-          targetHitsToDispatch.forEach(item => {
-            triggerTargetHitWhatsAppDispatch(item.s, item.val);
-          });
-        }
         setConnectionStatus('connected');
       } else {
         setConnectionStatus('error');
@@ -607,7 +507,7 @@ const App: React.FC = () => {
     } finally {
       isFetchingRef.current = false;
     }
-  }, [playLongBeep, playUpdateBlip, playIntelAlert, handleRedirectToCard, sendPushNotification, triggerTargetHitWhatsAppDispatch]);
+  }, [playLongBeep, playUpdateBlip, playIntelAlert, handleRedirectToCard, sendPushNotification]);
 
   const handleSignalUpdate = useCallback(async (updated: TradeSignal): Promise<boolean> => {
     const success = await updateSheetData('signals', 'UPDATE_SIGNAL', updated, updated.id);
@@ -665,15 +565,8 @@ const App: React.FC = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
     localStorage.setItem('libra_sound_enabled', String(next));
-    if (!next) {
-      stopAlertAudio();
-    } else {
-      initAudio().then(() => {
-        setTimeout(() => {
-          playUpdateBlip();
-        }, 150);
-      });
-    }
+    if (!next) stopAlertAudio();
+    if (next && !audioInitialized) initAudio();
   };
 
   const handleAcceptDisclosure = () => {
@@ -792,7 +685,7 @@ const App: React.FC = () => {
       watchlist={watchlist}
       activeWatchlistAlerts={activeWatchlistAlerts}
     >
-      {user && soundEnabled && !audioInitialized && (
+      {user && !audioInitialized && (
         <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
           <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white mb-6 animate-pulse shadow-[0_0_40px_rgba(37,99,235,0.4)]">
             <Zap size={40} />
