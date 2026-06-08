@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Newspaper, Globe, MapPin, Search, RefreshCw, ExternalLink, Clock, Sparkles, TrendingUp, TrendingDown, Flame, AlertCircle, Volume2, ShieldCheck, Sliders, Zap } from 'lucide-react';
-import { GoogleGenAI, Type } from "@google/genai";
 
 interface NewsItem {
   id: string;
@@ -277,194 +276,74 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
     }
   }, []);
 
-  // Fetch Live RSS Market feeds using Gemini with Google Search Grounding (and Proxy RSS fallback)
+  // Fetch Live RSS Market feeds using Free Proxy RSS directly
   const fetchLiveFeeds = useCallback(async () => {
     setIsSyncing(true);
     setSyncError(null);
     let success = false;
 
-    // 1. Primary approach: Use Google Gemini with Search Grounding to fetch real-time news
-    try {
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("API key not configured.");
-      }
+    // Define target feeds from Google News Search RSS
+    const domesticUrl = "https://news.google.com/rss/search?q=NIFTY+SENSEX+stocks+earnings+market+india&hl=en-IN&gl=IN&ceid=IN:en";
+    const globalUrl = "https://news.google.com/rss/search?q=Nasdaq+SP500+Fed+yields+global+stocks&hl=en-US&gl=US&ceid=US:en";
 
-      const ai = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
+    for (const proxy of PROXIES) {
+      try {
+        // Always safely encode target URL to protect query parameters inside the proxy
+        const fullDomUrl = `${proxy}${encodeURIComponent(domesticUrl)}`;
+        const fullGlobUrl = `${proxy}${encodeURIComponent(globalUrl)}`;
+
+        const [domResponse, globResponse] = await Promise.all([
+          fetch(fullDomUrl),
+          fetch(fullGlobUrl)
+        ]);
+
+        if (!domResponse.ok || !globResponse.ok) continue;
+
+        let domXml = "";
+        let globXml = "";
+
+        if (proxy.includes("allorigins.win/get")) {
+          const domJson = await domResponse.json();
+          const globJson = await globResponse.json();
+          domXml = domJson.contents || "";
+          globXml = globJson.contents || "";
+        } else {
+          domXml = await domResponse.text();
+          globXml = await globResponse.text();
         }
-      });
 
-      const currentDateString = new Date().toISOString().split('T')[0];
+        // Strict validation: Ensure the returned documents are actual XML and contain RSS <item> tags
+        const hasDomItems = domXml && domXml.toLowerCase().includes("<item>");
+        const hasGlobItems = globXml && globXml.toLowerCase().includes("<item>");
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: `Fetch and structuralize the 6 most recent, major financial and macro market news items (released in the last 24 hours) for:
-1. "domestic": Indian markets (specifically Nifty, Sensex, Bank Nifty, RBI rate, corporate results, or Indian inflation updates).
-2. "global": Global financial markets (specifically Nasdaq, S&P 500, FOMC/Fed, bond yields, macro indicators, or big tech earnings).
+        if (hasDomItems && hasGlobItems) {
+          const parsedDomestic = parseGoogleNewsRSS(domXml, 'dom');
+          const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
 
-For each item, generate/extract:
-- A unique ID
-- The actual current headline/title of the article
-- A valid link to the source portal (e.g. moneycontrol.com, economictimes.indiatimes.com, cnbc.com, bloomberg.com, reuters.com)
-- Current close publication date/time in ISO-8601 format (guided by today: ${currentDateString})
-- The actual journalist/platform source
-- A analytical/professional technical summary (1-2 sentences, max 50 words) outlining options pricing or trend implications
-- Sentiment of the news (BULLISH, BEARISH, NEUTRAL, MACRO)
-- isBreaking: boolean (true if highly significant market movement)
-
-Return strictly formatted JSON matching the response schema. Do not include markdown code block formatting in your raw response.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              domestic: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    title: { type: Type.STRING },
-                    link: { type: Type.STRING },
-                    pubDate: { type: Type.STRING, description: "ISO 8601 string of publication date/time in last 24 hours" },
-                    source: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    sentiment: { type: Type.STRING, description: "Must be: BULLISH, BEARISH, NEUTRAL, or MACRO" },
-                    isBreaking: { type: Type.BOOLEAN }
-                  },
-                  required: ["id", "title", "link", "pubDate", "source", "description", "sentiment"]
-                }
-              },
-              global: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    title: { type: Type.STRING },
-                    link: { type: Type.STRING },
-                    pubDate: { type: Type.STRING, description: "ISO 8601 string of publication date/time in last 24 hours" },
-                    source: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    sentiment: { type: Type.STRING, description: "Must be: BULLISH, BEARISH, NEUTRAL, or MACRO" },
-                    isBreaking: { type: Type.BOOLEAN }
-                  },
-                  required: ["id", "title", "link", "pubDate", "source", "description", "sentiment"]
-                }
-              }
-            },
-            required: ["domestic", "global"]
+          if (parsedDomestic.length > 0) {
+            setDomesticNews(prev => {
+              const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
+              // Filter out the old static offline seed placeholders and identical titles
+              const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("dom-seed"));
+              return [...parsedDomestic, ...filteredPrev].slice(0, 30);
+            });
           }
-        }
-      });
-
-      const text = response.text;
-      if (text) {
-        const parsedData = JSON.parse(text);
-        if (parsedData.domestic && Array.isArray(parsedData.domestic) && parsedData.domestic.length > 0) {
-          const cleanedDomestic = parsedData.domestic.map((item: any) => ({
-            ...item,
-            sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL', 'MACRO'].includes(item.sentiment) ? item.sentiment : 'NEUTRAL'
-          }));
           
-          setDomesticNews(prev => {
-            const existingTitles = new Set(cleanedDomestic.map(it => it.title.toLowerCase()));
-            const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("dom-seed"));
-            return [...cleanedDomestic, ...filteredPrev].slice(0, 30);
-          });
-        }
-
-        if (parsedData.global && Array.isArray(parsedData.global) && parsedData.global.length > 0) {
-          const cleanedGlobal = parsedData.global.map((item: any) => ({
-            ...item,
-            sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL', 'MACRO'].includes(item.sentiment) ? item.sentiment : 'NEUTRAL'
-          }));
-          
-          setGlobalNews(prev => {
-            const existingTitles = new Set(cleanedGlobal.map(it => it.title.toLowerCase()));
-            const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("glob-seed"));
-            return [...cleanedGlobal, ...filteredPrev].slice(0, 30);
-          });
-        }
-
-        success = true;
-        setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (Gemini Web Search)');
-      }
-    } catch (gemError) {
-      console.warn("Failed to fetch news using Gemini Search Grounding, trying RSS Proxy fallback:", gemError);
-    }
-
-    // 2. Secondary/Fallback approach: Fetch RSS via public CORS proxies
-    if (!success) {
-      // Define target feeds from Google News Search RSS
-      const domesticUrl = "https://news.google.com/rss/search?q=NIFTY+SENSEX+stocks+earnings+market+india&hl=en-IN&gl=IN&ceid=IN:en";
-      const globalUrl = "https://news.google.com/rss/search?q=Nasdaq+SP500+Fed+yields+global+stocks&hl=en-US&gl=US&ceid=US:en";
-
-      for (const proxy of PROXIES) {
-        try {
-          // Always safely encode target URL to protect query parameters inside the proxy
-          const fullDomUrl = `${proxy}${encodeURIComponent(domesticUrl)}`;
-          const fullGlobUrl = `${proxy}${encodeURIComponent(globalUrl)}`;
-
-          const [domResponse, globResponse] = await Promise.all([
-            fetch(fullDomUrl),
-            fetch(fullGlobUrl)
-          ]);
-
-          if (!domResponse.ok || !globResponse.ok) continue;
-
-          let domXml = "";
-          let globXml = "";
-
-          if (proxy.includes("allorigins.win/get")) {
-            const domJson = await domResponse.json();
-            const globJson = await globResponse.json();
-            domXml = domJson.contents || "";
-            globXml = globJson.contents || "";
-          } else {
-            domXml = await domResponse.text();
-            globXml = await globResponse.text();
+          if (parsedGlobal.length > 0) {
+            setGlobalNews(prev => {
+              const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
+              // Filter out the old static offline seed placeholders and identical titles
+              const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("glob-seed"));
+              return [...parsedGlobal, ...filteredPrev].slice(0, 30);
+            });
           }
 
-          // Strict validation: Ensure the returned documents are actual XML and contain RSS <item> tags
-          const hasDomItems = domXml && domXml.toLowerCase().includes("<item>");
-          const hasGlobItems = globXml && globXml.toLowerCase().includes("<item>");
-
-          if (hasDomItems && hasGlobItems) {
-            const parsedDomestic = parseGoogleNewsRSS(domXml, 'dom');
-            const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
-
-            if (parsedDomestic.length > 0) {
-              setDomesticNews(prev => {
-                const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
-                // Filter out the old static offline seed placeholders and identical titles
-                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("dom-seed"));
-                return [...parsedDomestic, ...filteredPrev].slice(0, 30);
-              });
-            }
-            
-            if (parsedGlobal.length > 0) {
-              setGlobalNews(prev => {
-                const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
-                // Filter out the old static offline seed placeholders and identical titles
-                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("glob-seed"));
-                return [...parsedGlobal, ...filteredPrev].slice(0, 30);
-              });
-            }
-
-            success = true;
-            setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (All-Source RSS)');
-            break;
-          }
-        } catch (err) {
-          console.warn(`Proxy ${proxy} failed, trying next...`, err);
+          success = true;
+          setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (All-Source RSS)');
+          break;
         }
+      } catch (err) {
+        console.warn(`Proxy ${proxy} failed, trying next...`, err);
       }
     }
 
