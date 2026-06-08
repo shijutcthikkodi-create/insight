@@ -195,10 +195,7 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
       setGlobalNews(prev => [chosen, ...prev].slice(0, 30));
     }
 
-    if (soundFn) {
-      soundFn(); // Play blip indicator
-    }
-  }, [soundFn]);
+  }, []);
 
   // Parse Google News search XML to customized JSON
   const parseGoogleNewsRSS = useCallback((xmlText: string, domainTag: string): NewsItem[] => {
@@ -460,14 +457,10 @@ Return strictly formatted JSON matching the response schema. Do not include mark
     if (!success) {
       setSyncError("Network rate-limiting. Offline simulation is active.");
       setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (Live Simulation Feed)');
-    } else {
-      if (soundFn) {
-        soundFn();
-      }
     }
     
     setIsSyncing(false);
-  }, [parseGoogleNewsRSS, soundFn]);
+  }, [parseGoogleNewsRSS]);
 
   // Handle Fetching triggers
   useEffect(() => {
@@ -546,13 +539,10 @@ Return strictly formatted JSON matching the response schema. Do not include mark
         setGlobalNews(prev => [chosen, ...prev].slice(0, 30));
       }
 
-      if (soundFn) {
-        soundFn(); // Play soft ticker-blip sound
-      }
     }, simInterval); // Push standard dynamic alerts at the user-adjusted interval
 
     return () => clearInterval(alertSimTimer);
-  }, [soundFn, simInterval]);
+  }, [simInterval]);
 
   // Relative Time Helper
   const getRelativeTimeString = (isoString: string) => {
