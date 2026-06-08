@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Newspaper, Globe, MapPin, Search, RefreshCw, ExternalLink, Clock, Sparkles, TrendingUp, TrendingDown, Flame, AlertCircle, Volume2, ShieldCheck, Sliders, Zap } from 'lucide-react';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface NewsItem {
   id: string;
@@ -277,84 +278,191 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
     }
   }, []);
 
-  // Fetch Live RSS Market feeds using CORS-free proxies
+  // Fetch Live RSS Market feeds using Gemini with Google Search Grounding (and Proxy RSS fallback)
   const fetchLiveFeeds = useCallback(async () => {
     setIsSyncing(true);
     setSyncError(null);
     let success = false;
-    
-    // Define target feeds from Google News Search RSS
-    const domesticUrl = "https://news.google.com/rss/search?q=NIFTY+SENSEX+stocks+earnings+market+india&hl=en-IN&gl=IN&ceid=IN:en";
-    const globalUrl = "https://news.google.com/rss/search?q=Nasdaq+SP500+Fed+yields+global+stocks&hl=en-US&gl=US&ceid=US:en";
 
-    // Attempt to scrape / fetch using proxies
-    for (const proxy of PROXIES) {
-      try {
-        const fullDomUrl = proxy === "https://api.allorigins.win/get?url=" 
-          ? `${proxy}${encodeURIComponent(domesticUrl)}`
-          : `${proxy}${domesticUrl}`;
-        
-        const fullGlobUrl = proxy === "https://api.allorigins.win/get?url=" 
-          ? `${proxy}${encodeURIComponent(globalUrl)}`
-          : `${proxy}${globalUrl}`;
+    // 1. Primary approach: Use Google Gemini with Search Grounding to fetch real-time news
+    try {
+      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("API key not configured.");
+      }
 
-        const [domResponse, globResponse] = await Promise.all([
-          fetch(fullDomUrl),
-          fetch(fullGlobUrl)
-        ]);
+      const ai = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
 
-        if (!domResponse.ok || !globResponse.ok) continue;
+      const currentDateString = new Date().toISOString().split('T')[0];
 
-        let domXml = "";
-        let globXml = "";
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: `Fetch and structuralize the 6 most recent, major financial and macro market news items (released in the last 24 hours) for:
+1. "domestic": Indian markets (specifically Nifty, Sensex, Bank Nifty, RBI rate, corporate results, or Indian inflation updates).
+2. "global": Global financial markets (specifically Nasdaq, S&P 500, FOMC/Fed, bond yields, macro indicators, or big tech earnings).
 
-        if (proxy.includes("allorigins")) {
-          const domJson = await domResponse.json();
-          const globJson = await globResponse.json();
-          domXml = domJson.contents;
-          globXml = globJson.contents;
-        } else {
-          domXml = await domResponse.text();
-          globXml = await globResponse.text();
+For each item, generate/extract:
+- A unique ID
+- The actual current headline/title of the article
+- A valid link to the source portal (e.g. moneycontrol.com, economictimes.indiatimes.com, cnbc.com, bloomberg.com, reuters.com)
+- Current close publication date/time in ISO-8601 format (guided by today: ${currentDateString})
+- The actual journalist/platform source
+- A analytical/professional technical summary (1-2 sentences, max 50 words) outlining options pricing or trend implications
+- Sentiment of the news (BULLISH, BEARISH, NEUTRAL, MACRO)
+- isBreaking: boolean (true if highly significant market movement)
+
+Return strictly formatted JSON matching the response schema. Do not include markdown code block formatting in your raw response.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              domestic: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    link: { type: Type.STRING },
+                    pubDate: { type: Type.STRING, description: "ISO 8601 string of publication date/time in last 24 hours" },
+                    source: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    sentiment: { type: Type.STRING, description: "Must be: BULLISH, BEARISH, NEUTRAL, or MACRO" },
+                    isBreaking: { type: Type.BOOLEAN }
+                  },
+                  required: ["id", "title", "link", "pubDate", "source", "description", "sentiment"]
+                }
+              },
+              global: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    title: { type: Type.STRING },
+                    link: { type: Type.STRING },
+                    pubDate: { type: Type.STRING, description: "ISO 8601 string of publication date/time in last 24 hours" },
+                    source: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    sentiment: { type: Type.STRING, description: "Must be: BULLISH, BEARISH, NEUTRAL, or MACRO" },
+                    isBreaking: { type: Type.BOOLEAN }
+                  },
+                  required: ["id", "title", "link", "pubDate", "source", "description", "sentiment"]
+                }
+              }
+            },
+            required: ["domestic", "global"]
+          }
+        }
+      });
+
+      const text = response.text;
+      if (text) {
+        const parsedData = JSON.parse(text);
+        if (parsedData.domestic && Array.isArray(parsedData.domestic) && parsedData.domestic.length > 0) {
+          const cleanedDomestic = parsedData.domestic.map((item: any) => ({
+            ...item,
+            sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL', 'MACRO'].includes(item.sentiment) ? item.sentiment : 'NEUTRAL'
+          }));
+          setDomesticNews(cleanedDomestic);
         }
 
-        if (domXml && globXml) {
-          const parsedDomestic = parseGoogleNewsRSS(domXml, 'dom');
-          const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
+        if (parsedData.global && Array.isArray(parsedData.global) && parsedData.global.length > 0) {
+          const cleanedGlobal = parsedData.global.map((item: any) => ({
+            ...item,
+            sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL', 'MACRO'].includes(item.sentiment) ? item.sentiment : 'NEUTRAL'
+          }));
+          setGlobalNews(cleanedGlobal);
+        }
 
-          if (parsedDomestic.length > 0) {
-            setDomesticNews(prev => {
-              // De-duplicate news item titles and merge
-              const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
-              const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()));
-              return [...parsedDomestic, ...filteredPrev].slice(0, 30);
-            });
-          }
+        success = true;
+        setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (Gemini Web Search)');
+      }
+    } catch (gemError) {
+      console.warn("Failed to fetch news using Gemini Search Grounding, trying RSS Proxy fallback:", gemError);
+    }
+
+    // 2. Secondary/Fallback approach: Fetch RSS via public CORS proxies
+    if (!success) {
+      // Define target feeds from Google News Search RSS
+      const domesticUrl = "https://news.google.com/rss/search?q=NIFTY+SENSEX+stocks+earnings+market+india&hl=en-IN&gl=IN&ceid=IN:en";
+      const globalUrl = "https://news.google.com/rss/search?q=Nasdaq+SP500+Fed+yields+global+stocks&hl=en-US&gl=US&ceid=US:en";
+
+      for (const proxy of PROXIES) {
+        try {
+          const fullDomUrl = proxy === "https://api.allorigins.win/get?url=" 
+            ? `${proxy}${encodeURIComponent(domesticUrl)}`
+            : `${proxy}${domesticUrl}`;
           
-          if (parsedGlobal.length > 0) {
-            setGlobalNews(prev => {
-              const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
-              const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()));
-              return [...parsedGlobal, ...filteredPrev].slice(0, 30);
-            });
+          const fullGlobUrl = proxy === "https://api.allorigins.win/get?url=" 
+            ? `${proxy}${encodeURIComponent(globalUrl)}`
+            : `${proxy}${globalUrl}`;
+
+          const [domResponse, globResponse] = await Promise.all([
+            fetch(fullDomUrl),
+            fetch(fullGlobUrl)
+          ]);
+
+          if (!domResponse.ok || !globResponse.ok) continue;
+
+          let domXml = "";
+          let globXml = "";
+
+          if (proxy.includes("allorigins")) {
+            const domJson = await domResponse.json();
+            const globJson = await globResponse.json();
+            domXml = domJson.contents;
+            globXml = globJson.contents;
+          } else {
+            domXml = await domResponse.text();
+            globXml = await globResponse.text();
           }
 
-          success = true;
-          setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (All-Source RSS)');
-          break; // Stop trying subsequent proxies on success
+          if (domXml && globXml) {
+            const parsedDomestic = parseGoogleNewsRSS(domXml, 'dom');
+            const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
+
+            if (parsedDomestic.length > 0) {
+              setDomesticNews(prev => {
+                const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
+                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()));
+                return [...parsedDomestic, ...filteredPrev].slice(0, 30);
+              });
+            }
+            
+            if (parsedGlobal.length > 0) {
+              setGlobalNews(prev => {
+                const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
+                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()));
+                return [...parsedGlobal, ...filteredPrev].slice(0, 30);
+              });
+            }
+
+            success = true;
+            setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (All-Source RSS)');
+            break;
+          }
+        } catch (err) {
+          console.warn(`Proxy ${proxy} failed, trying next...`, err);
         }
-      } catch (err) {
-        console.warn(`Proxy ${proxy} failed, trying next...`, err);
       }
     }
 
     if (!success) {
-      // Gentle warning fallback notification
-      setSyncError("Network rate-limiting. Live simulation is actively reporting options streams.");
+      setSyncError("Network rate-limiting. Offline simulation is active.");
       setLastUpdated(new Date().toLocaleTimeString('en-IN') + ' (Live Simulation Feed)');
     } else {
       if (soundFn) {
-        soundFn(); // Play blip on successful live feed update
+        soundFn();
       }
     }
     
