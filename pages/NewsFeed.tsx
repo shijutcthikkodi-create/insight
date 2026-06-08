@@ -114,8 +114,10 @@ const GLOBAL_SEED: NewsItem[] = [
 ];
 
 const PROXIES = [
-  "https://api.allorigins.win/get?url=",
-  "https://corsproxy.io/?"
+  "https://api.codetabs.com/v1/proxy?quest=",
+  "https://corsproxy.io/?url=",
+  "https://api.allorigins.win/raw?url=",
+  "https://api.allorigins.win/get?url="
 ];
 
 export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
@@ -370,7 +372,12 @@ Return strictly formatted JSON matching the response schema. Do not include mark
             ...item,
             sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL', 'MACRO'].includes(item.sentiment) ? item.sentiment : 'NEUTRAL'
           }));
-          setDomesticNews(cleanedDomestic);
+          
+          setDomesticNews(prev => {
+            const existingTitles = new Set(cleanedDomestic.map(it => it.title.toLowerCase()));
+            const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("dom-seed"));
+            return [...cleanedDomestic, ...filteredPrev].slice(0, 30);
+          });
         }
 
         if (parsedData.global && Array.isArray(parsedData.global) && parsedData.global.length > 0) {
@@ -378,7 +385,12 @@ Return strictly formatted JSON matching the response schema. Do not include mark
             ...item,
             sentiment: ['BULLISH', 'BEARISH', 'NEUTRAL', 'MACRO'].includes(item.sentiment) ? item.sentiment : 'NEUTRAL'
           }));
-          setGlobalNews(cleanedGlobal);
+          
+          setGlobalNews(prev => {
+            const existingTitles = new Set(cleanedGlobal.map(it => it.title.toLowerCase()));
+            const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("glob-seed"));
+            return [...cleanedGlobal, ...filteredPrev].slice(0, 30);
+          });
         }
 
         success = true;
@@ -396,13 +408,9 @@ Return strictly formatted JSON matching the response schema. Do not include mark
 
       for (const proxy of PROXIES) {
         try {
-          const fullDomUrl = proxy === "https://api.allorigins.win/get?url=" 
-            ? `${proxy}${encodeURIComponent(domesticUrl)}`
-            : `${proxy}${domesticUrl}`;
-          
-          const fullGlobUrl = proxy === "https://api.allorigins.win/get?url=" 
-            ? `${proxy}${encodeURIComponent(globalUrl)}`
-            : `${proxy}${globalUrl}`;
+          // Always safely encode target URL to protect query parameters inside the proxy
+          const fullDomUrl = `${proxy}${encodeURIComponent(domesticUrl)}`;
+          const fullGlobUrl = `${proxy}${encodeURIComponent(globalUrl)}`;
 
           const [domResponse, globResponse] = await Promise.all([
             fetch(fullDomUrl),
@@ -414,24 +422,29 @@ Return strictly formatted JSON matching the response schema. Do not include mark
           let domXml = "";
           let globXml = "";
 
-          if (proxy.includes("allorigins")) {
+          if (proxy.includes("allorigins.win/get")) {
             const domJson = await domResponse.json();
             const globJson = await globResponse.json();
-            domXml = domJson.contents;
-            globXml = globJson.contents;
+            domXml = domJson.contents || "";
+            globXml = globJson.contents || "";
           } else {
             domXml = await domResponse.text();
             globXml = await globResponse.text();
           }
 
-          if (domXml && globXml) {
+          // Strict validation: Ensure the returned documents are actual XML and contain RSS <item> tags
+          const hasDomItems = domXml && domXml.toLowerCase().includes("<item>");
+          const hasGlobItems = globXml && globXml.toLowerCase().includes("<item>");
+
+          if (hasDomItems && hasGlobItems) {
             const parsedDomestic = parseGoogleNewsRSS(domXml, 'dom');
             const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
 
             if (parsedDomestic.length > 0) {
               setDomesticNews(prev => {
                 const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
-                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()));
+                // Filter out the old static offline seed placeholders and identical titles
+                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("dom-seed"));
                 return [...parsedDomestic, ...filteredPrev].slice(0, 30);
               });
             }
@@ -439,7 +452,8 @@ Return strictly formatted JSON matching the response schema. Do not include mark
             if (parsedGlobal.length > 0) {
               setGlobalNews(prev => {
                 const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
-                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()));
+                // Filter out the old static offline seed placeholders and identical titles
+                const filteredPrev = prev.filter(it => !existingTitles.has(it.title.toLowerCase()) && !it.id.startsWith("glob-seed"));
                 return [...parsedGlobal, ...filteredPrev].slice(0, 30);
               });
             }
