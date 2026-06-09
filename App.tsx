@@ -460,7 +460,7 @@ const App: React.FC = () => {
         });
 
         if (!isInitial && data.messages.length > 0) {
-          const adminMessages = data.messages.filter(m => m.isAdminReply).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          const adminMessages = data.messages.filter(m => m.isAdminReply && !m.text.startsWith('LIBRA_NEWS_V1:')).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
           const latestAdminMsg = adminMessages[0];
           if (latestAdminMsg && latestAdminMsg.id !== lastIntelIdRef.current) {
             intelChangeDetected = true;
@@ -783,7 +783,7 @@ const App: React.FC = () => {
       </a>
 
       {page === 'dashboard' && <Dashboard watchlist={watchlist} signals={signals} messages={messages} user={user} granularHighlights={granularHighlights} activeMajorAlerts={activeMajorAlerts} activeWatchlistAlerts={activeWatchlistAlerts} activeIntelAlert={activeIntelAlert} onSignalUpdate={handleSignalUpdate} />}
-      {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} />}
+      {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} messages={messages} />}
       {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
       {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}

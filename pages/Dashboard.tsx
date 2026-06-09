@@ -49,7 +49,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const adminIntelHistory = useMemo(() => {
     return messages
-      .filter(m => m.isAdminReply)
+      .filter(m => m.isAdminReply && !m.text.startsWith('LIBRA_NEWS_V1:'))
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [messages]);
 

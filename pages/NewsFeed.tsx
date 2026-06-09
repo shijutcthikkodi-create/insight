@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Newspaper, Globe, MapPin, Search, RefreshCw, ExternalLink, Clock, Sparkles, TrendingUp, TrendingDown, Flame, AlertCircle, Volume2, ShieldCheck, Sliders, Zap, Plus, Trash2, Edit3, RotateCcw, X, Check } from 'lucide-react';
-import { User } from '../types';
+import { User, ChatMessage } from '../types';
 import { updateSheetData } from '../services/googleSheetsService';
 
 interface NewsItem {
@@ -121,7 +121,7 @@ const PROXIES = [
   "https://api.allorigins.win/get?url="
 ];
 
-export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = ({ user, soundFn }) => {
+export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; messages?: ChatMessage[] }> = ({ user, soundFn, messages = [] }) => {
   const [domesticNews, setDomesticNews] = useState<NewsItem[]>(DOMESTIC_SEED);
   const [globalNews, setGlobalNews] = useState<NewsItem[]>(GLOBAL_SEED);
   const [activeSegment, setActiveSegment] = useState<'DOMESTIC' | 'GLOBAL'>('DOMESTIC');
@@ -158,6 +158,75 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = 
       return new Set();
     }
   });
+
+  // Dynamically parse news elements published over Google Sheets messages
+  const parsedSheetNews = useMemo(() => {
+    const sheetCustom: NewsItem[] = [];
+    const sheetEdited: Record<string, NewsItem> = {};
+    const sheetDeleted = new Set<string>();
+
+    const newsMessages = [...messages]
+      .filter(m => m.text.startsWith('LIBRA_NEWS_V1:'))
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    newsMessages.forEach(m => {
+      try {
+        const parts = m.text.split('LIBRA_NEWS_V1:');
+        if (parts.length < 2) return;
+        const rest = parts[1];
+
+        if (rest.startsWith('ADD:')) {
+          const itemJson = rest.substring(4);
+          const item = JSON.parse(itemJson) as NewsItem;
+          if (!sheetCustom.some(it => it.id === item.id)) {
+            sheetCustom.unshift(item);
+          }
+        } else if (rest.startsWith('UPDATE_NEWS:')) {
+          const itemJson = rest.substring(12);
+          const item = JSON.parse(itemJson) as NewsItem;
+          sheetEdited[item.id] = item;
+          const idx = sheetCustom.findIndex(it => it.id === item.id);
+          if (idx !== -1) {
+            sheetCustom[idx] = item;
+          }
+        } else if (rest.startsWith('DELETE:')) {
+          const itemId = rest.substring(7).trim();
+          sheetDeleted.add(itemId);
+          const idx = sheetCustom.findIndex(it => it.id === itemId);
+          if (idx !== -1) {
+            sheetCustom.splice(idx, 1);
+          }
+        } else if (rest.startsWith('RESET:')) {
+          const itemId = rest.substring(6).trim();
+          delete sheetEdited[itemId];
+        }
+      } catch (err) {
+        console.error("Failed to parse sheet news message:", err);
+      }
+    });
+
+    return { sheetCustom, sheetEdited, sheetDeleted };
+  }, [messages]);
+
+  const mergedCustomNews = useMemo(() => {
+    const all = [...parsedSheetNews.sheetCustom];
+    customNews.forEach(item => {
+      if (!all.some(it => it.id === item.id)) {
+        all.push(item);
+      }
+    });
+    return all;
+  }, [customNews, parsedSheetNews.sheetCustom]);
+
+  const mergedEditedNews = useMemo(() => {
+    return { ...editedNews, ...parsedSheetNews.sheetEdited };
+  }, [editedNews, parsedSheetNews.sheetEdited]);
+
+  const mergedDeletedNewsIds = useMemo(() => {
+    const next = new Set(deletedNewsIds);
+    parsedSheetNews.sheetDeleted.forEach(id => next.add(id));
+    return next;
+  }, [deletedNewsIds, parsedSheetNews.sheetDeleted]);
 
   // Modal control states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -644,6 +713,16 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = 
         localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
       }
 
+      // Synchronize edit globally via Google Sheets messages database
+      updateSheetData('messages', 'ADD', {
+        id: `news-update-${Date.now()}`,
+        text: `LIBRA_NEWS_V1:UPDATE_NEWS:${JSON.stringify(updatedItem)}`,
+        timestamp: new Date().toISOString(),
+        isAdminReply: true,
+        userId: 'ADMIN',
+        broadcaster: 'Admin'
+      });
+
       updateSheetData('news', 'UPDATE_NEWS', updatedItem, editingItem.id);
     } else {
       // Creating a new article
@@ -662,6 +741,16 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = 
       const nextCustom = [newItem, ...customNews];
       setCustomNews(nextCustom);
       localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
+
+      // Synchronize dispatch globally via Google Sheets messages database
+      updateSheetData('messages', 'ADD', {
+        id: `news-add-${Date.now()}`,
+        text: `LIBRA_NEWS_V1:ADD:${JSON.stringify(newItem)}`,
+        timestamp: new Date().toISOString(),
+        isAdminReply: true,
+        userId: 'ADMIN',
+        broadcaster: 'Admin'
+      });
 
       updateSheetData('news', 'ADD', newItem);
     }
@@ -688,6 +777,16 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = 
     setCustomNews(nextCustom);
     localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
 
+    // Synchronize delete globally over shared Google Sheets database
+    updateSheetData('messages', 'ADD', {
+      id: `news-delete-${Date.now()}`,
+      text: `LIBRA_NEWS_V1:DELETE:${itemId}`,
+      timestamp: new Date().toISOString(),
+      isAdminReply: true,
+      userId: 'ADMIN',
+      broadcaster: 'Admin'
+    });
+
     updateSheetData('news', 'DELETE', { id: itemId }, itemId);
   };
 
@@ -701,16 +800,26 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = 
     delete nextEdited[itemId];
     setEditedNews(nextEdited);
     localStorage.setItem('libra_edited_news', JSON.stringify(nextEdited));
+
+    // Revert edits globally via broadcast reset command
+    updateSheetData('messages', 'ADD', {
+      id: `news-reset-${Date.now()}`,
+      text: `LIBRA_NEWS_V1:RESET:${itemId}`,
+      timestamp: new Date().toISOString(),
+      isAdminReply: true,
+      userId: 'ADMIN',
+      broadcaster: 'Admin'
+    });
   };
 
-  // Merge feeds and custom news items seamlessly
+  // Merge feeds and custom news items seamlessly using synchronized merges
   const customDomestic = useMemo(() => {
-    return customNews.filter(it => (it as any).segment === 'DOMESTIC' || (!('segment' in it) && it.id.startsWith('custom-news')));
-  }, [customNews]);
+    return mergedCustomNews.filter(it => (it as any).segment === 'DOMESTIC' || (!('segment' in it) && it.id.startsWith('custom-news')));
+  }, [mergedCustomNews]);
 
   const customGlobal = useMemo(() => {
-    return customNews.filter(it => (it as any).segment === 'GLOBAL');
-  }, [customNews]);
+    return mergedCustomNews.filter(it => (it as any).segment === 'GLOBAL');
+  }, [mergedCustomNews]);
 
   const activeList = useMemo(() => {
     if (activeSegment === 'DOMESTIC') {
@@ -725,17 +834,17 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = 
     const now = Date.now();
     return activeList
       .map(item => {
-        if (editedNews[item.id]) {
-          return { ...item, ...editedNews[item.id] };
+        if (mergedEditedNews[item.id]) {
+          return { ...item, ...mergedEditedNews[item.id] };
         }
         return item;
       })
       .filter(item => {
-        if (deletedNewsIds.has(item.id)) return false;
+        if (mergedDeletedNewsIds.has(item.id)) return false;
         const ageMs = now - new Date(item.pubDate).getTime();
         return ageMs <= limitMs;
       });
-  }, [activeList, editedNews, deletedNewsIds]);
+  }, [activeList, mergedEditedNews, mergedDeletedNewsIds]);
   
   const filteredNews = useMemo(() => {
     if (!searchQuery.trim()) return processedList;
