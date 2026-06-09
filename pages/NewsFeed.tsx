@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Newspaper, Globe, MapPin, Search, RefreshCw, ExternalLink, Clock, Sparkles, TrendingUp, TrendingDown, Flame, AlertCircle, Volume2, ShieldCheck, Sliders, Zap } from 'lucide-react';
+import { Newspaper, Globe, MapPin, Search, RefreshCw, ExternalLink, Clock, Sparkles, TrendingUp, TrendingDown, Flame, AlertCircle, Volume2, ShieldCheck, Sliders, Zap, Plus, Trash2, Edit3, RotateCcw, X, Check } from 'lucide-react';
+import { User } from '../types';
+import { updateSheetData } from '../services/googleSheetsService';
 
 interface NewsItem {
   id: string;
@@ -119,7 +121,7 @@ const PROXIES = [
   "https://api.allorigins.win/get?url="
 ];
 
-export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
+export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void }> = ({ user, soundFn }) => {
   const [domesticNews, setDomesticNews] = useState<NewsItem[]>(DOMESTIC_SEED);
   const [globalNews, setGlobalNews] = useState<NewsItem[]>(GLOBAL_SEED);
   const [activeSegment, setActiveSegment] = useState<'DOMESTIC' | 'GLOBAL'>('DOMESTIC');
@@ -129,8 +131,50 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [simInterval, setSimInterval] = useState<number>(45000); // Live terminal simulation gap/interval in ms (45 seconds default)
 
+  // Custom states for Admin-posted, Edited and Deleted news
+  const [customNews, setCustomNews] = useState<NewsItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('libra_custom_news');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [editedNews, setEditedNews] = useState<Record<string, NewsItem>>(() => {
+    try {
+      const saved = localStorage.getItem('libra_edited_news');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [deletedNewsIds, setDeletedNewsIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('libra_deleted_news');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Modal control states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<NewsItem | null>(null); // if null, we are creating a new item
+  
+  // Form states
+  const [formHeadline, setFormHeadline] = useState('');
+  const [formSource, setFormSource] = useState('');
+  const [formLink, setFormLink] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formSentiment, setFormSentiment] = useState<'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'MACRO'>('NEUTRAL');
+  const [formSegment, setFormSegment] = useState<'DOMESTIC' | 'GLOBAL'>('DOMESTIC');
+  const [formIsBreaking, setFormIsBreaking] = useState(false);
+
   // Instant Manual Tracker Injector Callback
   const triggerManualAlert = useCallback(() => {
+    if (!user?.isAdmin) return;
     const isDom = Math.random() > 0.5;
     const nowTimes = new Date().toISOString();
     const randomSeedId = `sim-alert-manual-${Math.random()}`;
@@ -143,7 +187,7 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
           link: "https://economictimes.indiatimes.com/markets",
           pubDate: nowTimes,
           source: "Terminal Intelligence",
-          description: "Options traders block trade over 115,000 contracts of Nifty CE contracts near the current swing high. This surge in ATM call open interest indicates active bullish leverage setups participating in midday buy trades.\n\nSimultaneously, multi-exchange trend monitors demonstrate extreme long-buildup configurations. Capital floor parameters remain solid as institutional traders adjust short-strike protections.",
+          description: "Options traders block trade over 115,000 contracts of Nifty CE contracts near the current swing high. This surge in ATM call open interest indicates active bullish leverage setups participating in midday buy trades.\n\nSimultaneously, multi-exchange trend monitors demonstrate extreme long-buildup configurations. Capital floor parameters remain solid as institutional writers adjust short-strike protections.",
           sentiment: "BULLISH",
           isBreaking: true
         },
@@ -196,7 +240,7 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
       setGlobalNews(prev => [chosen, ...prev].slice(0, 30));
     }
 
-  }, []);
+  }, [user]);
 
   // Parse Google News search XML to customized JSON
   const parseGoogleNewsRSS = useCallback((xmlText: string, domainTag: string): NewsItem[] => {
@@ -437,6 +481,62 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
     return () => clearInterval(alertSimTimer);
   }, [simInterval]);
 
+  // Periodic Cleanup of articles older than 36 hours from states and localStorage
+  useEffect(() => {
+    const cleanupExpiredNews = () => {
+      const limitMs = 36 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      // Clean customNews state and localStorage
+      setCustomNews(prev => {
+        const fresh = prev.filter(item => {
+          const ageMs = now - new Date(item.pubDate).getTime();
+          return ageMs <= limitMs;
+        });
+        if (fresh.length !== prev.length) {
+          localStorage.setItem('libra_custom_news', JSON.stringify(fresh));
+        }
+        return fresh;
+      });
+
+      // Clean editedNews state and localStorage
+      setEditedNews(prev => {
+        let changed = false;
+        const fresh: Record<string, NewsItem> = {};
+        Object.keys(prev).forEach(id => {
+          const item = prev[id];
+          if (item) {
+            const ageMs = now - new Date(item.pubDate).getTime();
+            if (ageMs <= limitMs) {
+              fresh[id] = item;
+            } else {
+              changed = true;
+            }
+          }
+        });
+        if (changed) {
+          localStorage.setItem('libra_edited_news', JSON.stringify(fresh));
+        }
+        return fresh;
+      });
+
+      // Filter local live news states
+      setDomesticNews(prev => prev.filter(item => {
+        const ageMs = now - new Date(item.pubDate).getTime();
+        return ageMs <= limitMs;
+      }));
+
+      setGlobalNews(prev => prev.filter(item => {
+        const ageMs = now - new Date(item.pubDate).getTime();
+        return ageMs <= limitMs;
+      }));
+    };
+
+    cleanupExpiredNews();
+    const interval = setInterval(cleanupExpiredNews, 60000); // Check every 60 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   // Relative Time Helper
   const getRelativeTimeString = (isoString: string) => {
     try {
@@ -480,18 +580,172 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
     }
   };
 
-  // Filters news on query text
-  const activeList = activeSegment === 'DOMESTIC' ? domesticNews : globalNews;
+  // Create article modal open trigger
+  const openCreateModal = () => {
+    if (!user?.isAdmin) return;
+    setEditingItem(null);
+    setFormHeadline('');
+    setFormSource('Libra News Desk');
+    setFormLink('https://economictimes.indiatimes.com/markets');
+    setFormDescription('');
+    setFormSentiment('NEUTRAL');
+    setFormSegment(activeSegment);
+    setFormIsBreaking(false);
+    setIsModalOpen(true);
+  };
+
+  // Edit article trigger
+  const openEditModal = (item: NewsItem) => {
+    if (!user?.isAdmin) return;
+    setEditingItem(item);
+    setFormHeadline(item.title);
+    setFormSource(item.source);
+    setFormLink(item.link || '');
+    setFormDescription(item.description);
+    setFormSentiment(item.sentiment);
+    setFormSegment((item as any).segment || activeSegment);
+    setFormIsBreaking(!!item.isBreaking);
+    setIsModalOpen(true);
+  };
+
+  // Submit create or edit news item
+  const handleSaveArticle = () => {
+    if (!user?.isAdmin) {
+      alert("Unauthorized action. Only administrators can publish or modify news wire.");
+      return;
+    }
+    if (!formHeadline.trim() || !formDescription.trim()) {
+      alert("Headline and Description are required to dispatch standard wire.");
+      return;
+    }
+
+    if (editingItem) {
+      // Editing existing article (could be Custom, RSS or Seed)
+      const updatedItem: NewsItem = {
+        ...editingItem,
+        title: formHeadline.trim(),
+        source: formSource.trim() || 'Libra News Desk',
+        link: formLink.trim(),
+        description: formDescription.trim(),
+        sentiment: formSentiment,
+        isBreaking: formIsBreaking,
+        pubDate: new Date().toISOString()
+      };
+      (updatedItem as any).segment = formSegment;
+
+      const nextEdited = { ...editedNews, [editingItem.id]: updatedItem };
+      setEditedNews(nextEdited);
+      localStorage.setItem('libra_edited_news', JSON.stringify(nextEdited));
+
+      // Update in custom list if custom
+      if (customNews.some(it => it.id === editingItem.id)) {
+        const nextCustom = customNews.map(it => it.id === editingItem.id ? updatedItem : it);
+        setCustomNews(nextCustom);
+        localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
+      }
+
+      updateSheetData('news', 'UPDATE_NEWS', updatedItem, editingItem.id);
+    } else {
+      // Creating a new article
+      const newItem: NewsItem = {
+        id: `custom-news-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        title: formHeadline.trim(),
+        source: formSource.trim() || 'Libra News Desk',
+        link: formLink.trim() || 'https://economictimes.indiatimes.com/markets',
+        description: formDescription.trim(),
+        sentiment: formSentiment,
+        isBreaking: formIsBreaking,
+        pubDate: new Date().toISOString()
+      };
+      (newItem as any).segment = formSegment;
+
+      const nextCustom = [newItem, ...customNews];
+      setCustomNews(nextCustom);
+      localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
+
+      updateSheetData('news', 'ADD', newItem);
+    }
+
+    setIsModalOpen(false);
+    setEditingItem(null);
+    if (soundFn) soundFn();
+  };
+
+  // Delete article triggers
+  const handleDeleteArticle = (itemId: string) => {
+    if (!user?.isAdmin) {
+      alert("Unauthorized action. Only administrators can delete news wire.");
+      return;
+    }
+    if (!window.confirm("CONFIRM ARTICLE RETRIEVAL: Are you sure you want to delete and wipe this article from the terminal feed?")) return;
+    
+    const nextDeleted = new Set(deletedNewsIds);
+    nextDeleted.add(itemId);
+    setDeletedNewsIds(nextDeleted);
+    localStorage.setItem('libra_deleted_news', JSON.stringify(Array.from(nextDeleted)));
+
+    const nextCustom = customNews.filter(it => it.id !== itemId);
+    setCustomNews(nextCustom);
+    localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
+
+    updateSheetData('news', 'DELETE', { id: itemId }, itemId);
+  };
+
+  // Reset edited custom override back to original RSS format
+  const handleResetArticle = (itemId: string) => {
+    if (!user?.isAdmin) {
+      alert("Unauthorized action. Only administrators can reset news wire.");
+      return;
+    }
+    const nextEdited = { ...editedNews };
+    delete nextEdited[itemId];
+    setEditedNews(nextEdited);
+    localStorage.setItem('libra_edited_news', JSON.stringify(nextEdited));
+  };
+
+  // Merge feeds and custom news items seamlessly
+  const customDomestic = useMemo(() => {
+    return customNews.filter(it => (it as any).segment === 'DOMESTIC' || (!('segment' in it) && it.id.startsWith('custom-news')));
+  }, [customNews]);
+
+  const customGlobal = useMemo(() => {
+    return customNews.filter(it => (it as any).segment === 'GLOBAL');
+  }, [customNews]);
+
+  const activeList = useMemo(() => {
+    if (activeSegment === 'DOMESTIC') {
+      return [...customDomestic, ...domesticNews];
+    } else {
+      return [...customGlobal, ...globalNews];
+    }
+  }, [activeSegment, customDomestic, domesticNews, customGlobal, globalNews]);
+
+  const processedList = useMemo(() => {
+    const limitMs = 36 * 60 * 60 * 1000;
+    const now = Date.now();
+    return activeList
+      .map(item => {
+        if (editedNews[item.id]) {
+          return { ...item, ...editedNews[item.id] };
+        }
+        return item;
+      })
+      .filter(item => {
+        if (deletedNewsIds.has(item.id)) return false;
+        const ageMs = now - new Date(item.pubDate).getTime();
+        return ageMs <= limitMs;
+      });
+  }, [activeList, editedNews, deletedNewsIds]);
   
   const filteredNews = useMemo(() => {
-    if (!searchQuery.trim()) return activeList;
+    if (!searchQuery.trim()) return processedList;
     const q = searchQuery.toLowerCase();
-    return activeList.filter(item => 
+    return processedList.filter(item => 
       item.title.toLowerCase().includes(q) || 
       item.description.toLowerCase().includes(q) || 
       item.source.toLowerCase().includes(q)
     );
-  }, [activeList, searchQuery]);
+  }, [processedList, searchQuery]);
 
   // Sentiment formatting helpers
   const sentimentBadges = {
@@ -518,6 +772,18 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
           </div>
           
           <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Admin Article Publisher Trigger */}
+            {user?.isAdmin && (
+              <button
+                onClick={openCreateModal}
+                className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500/30 font-black text-[9px] py-2.5 px-3.5 rounded-2xl transition-all uppercase tracking-wider active:scale-95 shadow-lg shadow-emerald-950/50"
+                title="Publish an admin article into the terminal feed"
+              >
+                <Plus size={11} />
+                <span>POST WIRE</span>
+              </button>
+            )}
+
             {/* Compact Simulation Gap Selector */}
             <div className="flex items-center space-x-1.5 text-slate-400 text-[10px] bg-slate-900 px-3 py-1.5 rounded-2xl border border-slate-800">
               <Sliders size={11} className="text-yellow-500 animate-pulse" />
@@ -537,14 +803,16 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
             </div>
 
             {/* Micro Injection event button */}
-            <button
-              onClick={triggerManualAlert}
-              title="Inject Custom Volatility Event"
-              className="flex items-center space-x-1 bg-yellow-600/10 hover:bg-yellow-600/20 text-yellow-400 border border-yellow-500/20 font-black text-[9px] py-2.5 px-3 rounded-2xl transition-all uppercase tracking-wider active:scale-95"
-            >
-              <Sparkles size={11} />
-              <span>INJECT</span>
-            </button>
+            {user?.isAdmin && (
+              <button
+                onClick={triggerManualAlert}
+                title="Inject Custom Volatility Event"
+                className="flex items-center space-x-1 bg-yellow-600/10 hover:bg-yellow-600/20 text-yellow-400 border border-yellow-500/20 font-black text-[9px] py-2.5 px-3 rounded-2xl transition-all uppercase tracking-wider active:scale-95"
+              >
+                <Sparkles size={11} />
+                <span>INJECT</span>
+              </button>
+            )}
 
             <div className="flex items-center space-x-2 text-slate-400 text-[10px] bg-slate-900 px-3.5 py-2 rounded-2xl border border-slate-800">
               <Clock size={12} className="text-blue-500" />
@@ -623,63 +891,111 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
         {/* Main News List Component */}
         <div className="flex-1 space-y-3.5">
           {filteredNews.length > 0 ? (
-            filteredNews.map((news) => (
-              <div
-                key={news.id}
-                className={`bg-slate-900/80 border rounded-2xl p-4.5 shadow-xl relative overflow-hidden transition-all duration-300 flex flex-col group/item hover:bg-slate-800/25 ${
-                  news.isBreaking 
-                    ? 'border-red-500/30 bg-red-950/5 ring-1 ring-red-500/10' 
-                    : 'border-slate-800 hover:border-slate-700/60'
-                }`}
-              >
-                {/* Breaking News background flare */}
-                {news.isBreaking && (
-                  <div className="absolute top-0 right-0 p-1.5 bg-red-950 border-l border-b border-red-500/20 text-red-400 text-[6.5px] font-black tracking-widest uppercase rounded-bl-lg flex items-center space-x-1 select-none animate-pulse">
-                    <span className="w-1 h-1 bg-red-500 rounded-full animate-ping mr-0.5"></span>
-                    <span>BREAKING ALERT</span>
-                  </div>
-                )}
-
-                <div className="flex flex-col space-y-2">
-                  
-                  {/* Article Meta Indicators */}
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[10px] font-black text-blue-400 tracking-tight underline cursor-default font-mono">
-                      {news.source.toUpperCase()}
-                    </span>
-                    <span className="w-1 h-1 bg-slate-700 rounded-full" />
-                    <div className="flex items-center text-slate-500 text-[8.5px] font-mono font-semibold gap-1.5 flex-wrap">
-                      <Clock size={10} className="opacity-70" />
-                      <span>{getRelativeTimeString(news.pubDate)}</span>
-                      <span className="text-slate-600">|</span>
-                      <span className="text-slate-400">ORIGIN: {getAbsoluteTimeString(news.pubDate)}</span>
+            filteredNews.map((news) => {
+              const hasDraftOverride = !!editedNews[news.id];
+              const isCustomPosted = news.id.startsWith('custom-news');
+              return (
+                <div
+                  key={news.id}
+                  className={`bg-slate-900/80 border rounded-2xl p-4.5 shadow-xl relative overflow-hidden transition-all duration-300 flex flex-col group/item hover:bg-slate-800/25 ${
+                    news.isBreaking 
+                      ? 'border-red-500/30 bg-red-950/5 ring-1 ring-red-500/10' 
+                      : 'border-slate-800 hover:border-slate-700/60'
+                  }`}
+                >
+                  {/* Breaking News background flare */}
+                  {news.isBreaking && (
+                    <div className="absolute top-0 right-0 p-1.5 bg-red-950 border-l border-b border-red-500/20 text-red-400 text-[6.5px] font-black tracking-widest uppercase rounded-bl-lg flex items-center space-x-1 select-none animate-pulse">
+                      <span className="w-1 h-1 bg-red-500 rounded-full animate-ping mr-0.5"></span>
+                      <span>BREAKING ALERT</span>
                     </div>
+                  )}
+
+                  <div className="flex flex-col space-y-2">
+                    
+                    {/* Article Meta Indicators */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-[10px] font-black text-blue-400 tracking-tight underline cursor-default font-mono">
+                        {news.source.toUpperCase()}
+                      </span>
+                      {isCustomPosted && (
+                        <span className="px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[7px] font-black uppercase tracking-widest rounded animate-pulse">
+                          ADMIN DISPATCH
+                        </span>
+                      )}
+                      {hasDraftOverride && (
+                        <span className="px-1.5 py-0.5 bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-[7px] font-black uppercase tracking-widest rounded">
+                          EDITED
+                        </span>
+                      )}
+                      <span className="w-1 h-1 bg-slate-700 rounded-full" />
+                      <div className="flex items-center text-slate-500 text-[8.5px] font-mono font-semibold gap-1.5 flex-wrap">
+                        <Clock size={10} className="opacity-70" />
+                        <span>{getRelativeTimeString(news.pubDate)}</span>
+                        <span className="text-slate-600">|</span>
+                        <span className="text-slate-400">ORIGIN: {getAbsoluteTimeString(news.pubDate)}</span>
+                      </div>
+                    </div>
+
+                    {/* Headline Title */}
+                    <h3 className="text-white font-black text-sm md:text-base leading-snug tracking-tight uppercase group-hover/item:text-blue-400 transition-colors">
+                      {news.title}
+                    </h3>
+
+                    {/* Description Box - Split and render multi-paragraphs cleanly */}
+                    <div className="space-y-2 py-1">
+                      {news.description.split('\n\n').map((paragraph, index) => (
+                        <p key={index} className="text-slate-400 text-xs font-semibold leading-relaxed tracking-wide text-justify">
+                          {paragraph}
+                        </p>
+                      ))}
+                    </div>
+
+                    {/* Sentiment and Admin Tools Footer Action Line */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/40 flex-wrap gap-2">
+                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black tracking-widest uppercase ${sentimentBadges[news.sentiment]}`}>
+                        {news.sentiment}
+                      </span>
+                      
+                      {/* Admin Controls Area */}
+                      {user?.isAdmin && (
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => openEditModal(news)}
+                            className="flex items-center space-x-1 px-2.5 py-1 text-[8px] bg-blue-500/10 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/25 rounded-lg font-black transition-all active:scale-95 cursor-pointer"
+                            title="Edit this wire article headline or content"
+                          >
+                            <Edit3 size={10} />
+                            <span>EDIT</span>
+                          </button>
+                          
+                          <button
+                            onClick={() => handleDeleteArticle(news.id)}
+                            className="flex items-center space-x-1 px-2.5 py-1 text-[8px] bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/25 rounded-lg font-black transition-all active:scale-95 cursor-pointer"
+                            title="Wipe article entirely"
+                          >
+                            <Trash2 size={10} />
+                            <span>DELETE</span>
+                          </button>
+
+                          {hasDraftOverride && (
+                            <button
+                              onClick={() => handleResetArticle(news.id)}
+                              className="flex items-center space-x-1 px-2.5 py-1 text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 rounded-lg font-black transition-all active:scale-95 cursor-pointer"
+                              title="Restore to original standard wire content"
+                            >
+                              <RotateCcw size={10} />
+                              <span>RESET</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                   </div>
-
-                  {/* Headline Title */}
-                  <h3 className="text-white font-black text-sm md:text-base leading-snug tracking-tight uppercase group-hover/item:text-blue-400 transition-colors">
-                    {news.title}
-                  </h3>
-
-                  {/* Description Box - Split and render multi-paragraphs cleanly */}
-                  <div className="space-y-2 py-1">
-                    {news.description.split('\n\n').map((paragraph, index) => (
-                      <p key={index} className="text-slate-400 text-xs font-semibold leading-relaxed tracking-wide text-justify">
-                        {paragraph}
-                      </p>
-                    ))}
-                  </div>
-
-                  {/* Sentiment Badge */}
-                  <div className="flex items-center pt-2 border-t border-slate-800/40">
-                    <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black tracking-widest uppercase ${sentimentBadges[news.sentiment]}`}>
-                      {news.sentiment}
-                    </span>
-                  </div>
-
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-center py-20 border border-dashed border-slate-800 rounded-3xl bg-slate-900/15">
               <AlertCircle size={24} className="mx-auto text-slate-700 mb-3" />
@@ -707,6 +1023,145 @@ export const NewsFeed: React.FC<{ soundFn?: () => void }> = ({ soundFn }) => {
         </div>
 
       </div>
+
+      {/* Admin Post/Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[300] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/20 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <Newspaper className="text-blue-500 animate-pulse" size={18} />
+                <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
+                  {editingItem ? "EDIT WIRE ENTRY" : "TRANSMIT NEW WIRE"}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all active:scale-95"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body / Form */}
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto pr-2">
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Article Headline</label>
+                <input
+                  type="text"
+                  value={formHeadline}
+                  onChange={(e) => setFormHeadline(e.target.value)}
+                  placeholder="e.g. Nifty 50 approaches support near moving averages"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-bold placeholder:text-slate-700"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Source Agency</label>
+                  <input
+                    type="text"
+                    value={formSource}
+                    onChange={(e) => setFormSource(e.target.value)}
+                    placeholder="e.g. Libra Intel Desk"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">External Link (Optional)</label>
+                  <input
+                    type="text"
+                    value={formLink}
+                    onChange={(e) => setFormLink(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-bold font-mono text-[10px]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Target Segment</label>
+                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setFormSegment('DOMESTIC')}
+                      className={`py-1.5 text-[9px] font-black rounded-lg transition-all ${formSegment === 'DOMESTIC' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300 bg-transparent shadow-none'}`}
+                    >
+                      DOMESTIC
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormSegment('GLOBAL')}
+                      className={`py-1.5 text-[9px] font-black rounded-lg transition-all ${formSegment === 'GLOBAL' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300 bg-transparent shadow-none'}`}
+                    >
+                      GLOBAL
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Sentiment Accent</label>
+                  <select
+                    value={formSentiment}
+                    onChange={(e: any) => setFormSentiment(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-[10px] text-white focus:border-blue-500 outline-none font-bold uppercase"
+                  >
+                    <option value="BULLISH">BULLISH</option>
+                    <option value="BEARISH">BEARISH</option>
+                    <option value="NEUTRAL">NEUTRAL</option>
+                    <option value="MACRO">MACRO</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Description Narrative</label>
+                <textarea
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  placeholder="Insert analysis narrative. Separate paragraphs with double newlines for neat styling..."
+                  className="w-full h-32 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs text-white focus:border-blue-500 outline-none font-bold placeholder:text-slate-700 leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center space-x-3.5 bg-slate-950/40 p-4 border border-slate-800/80 rounded-2xl justify-between">
+                <div>
+                  <label className="block text-[10px] font-black text-white uppercase tracking-widest">Flag as Breaking News</label>
+                  <span className="text-[9px] text-slate-500 font-semibold mt-0.5 block leading-tight">Highlights with a vibrant red accent framing.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormIsBreaking(!formIsBreaking)}
+                  className={`w-11 h-6 rounded-full p-1 transition-all duration-300 focus:outline-none flex items-center ${formIsBreaking ? 'bg-red-600 justify-end' : 'bg-slate-800 justify-start'}`}
+                >
+                  <div className="w-4 h-4 rounded-full bg-white shadow-md"></div>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-800/10 flex items-center justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
+              >
+                CANCEL
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveArticle}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-lg flex items-center space-x-2 active:scale-95"
+              >
+                <Check size={12} />
+                <span>{editingItem ? "UPDATE ARTICLE" : "TRANSMIT"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

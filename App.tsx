@@ -10,6 +10,7 @@ import Admin from './pages/Admin';
 import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
 import { NewsFeed } from './pages/NewsFeed';
+import OptionsJournal from './pages/OptionJournal';
 import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
 import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw, Newspaper } from 'lucide-react';
@@ -161,6 +162,19 @@ const App: React.FC = () => {
       window.removeEventListener('keydown', handleGesture);
     };
   }, [initAudio]);
+
+  useEffect(() => {
+    const handleNavigate = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (customEvent.detail) {
+        setPage(customEvent.detail);
+      }
+    };
+    window.addEventListener('libra-navigate', handleNavigate);
+    return () => {
+      window.removeEventListener('libra-navigate', handleNavigate);
+    };
+  }, []);
 
   const handleRedirectToCard = useCallback((id: string) => {
     if (userRef.current?.isAdmin && pageRef.current === 'admin') {
@@ -769,10 +783,11 @@ const App: React.FC = () => {
       </a>
 
       {page === 'dashboard' && <Dashboard watchlist={watchlist} signals={signals} messages={messages} user={user} granularHighlights={granularHighlights} activeMajorAlerts={activeMajorAlerts} activeWatchlistAlerts={activeWatchlistAlerts} activeIntelAlert={activeIntelAlert} onSignalUpdate={handleSignalUpdate} />}
-      {page === 'news' && <NewsFeed soundFn={playUpdateBlip} />}
+      {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} />}
       {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
       {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}
+      {page === 'journal' && <OptionsJournal signals={signals} />}
       {page === 'rules' && <Rules />}
       {page === 'about' && <About />}
       {user?.isAdmin && page === 'admin' && <Admin watchlist={watchlist} onUpdateWatchlist={() => {}} signals={signals} onUpdateSignals={() => {}} users={users} onUpdateUsers={() => {}} logs={logs} messages={messages} onNavigate={setPage} onHardSync={() => { deadSignalsRef.current.clear(); deadInsightsRef.current.clear(); return sync(true); }} />}
@@ -797,6 +812,10 @@ const App: React.FC = () => {
         <button onClick={() => setPage('stats')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'stats' ? 'text-yellow-500' : 'text-slate-500'}`}>
           <BarChart2 size={20} strokeWidth={page === 'stats' ? 3 : 2} />
           <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Metrics</span>
+        </button>
+        <button onClick={() => setPage('journal')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'journal' ? 'text-blue-500' : 'text-slate-500'}`}>
+          <Briefcase size={20} strokeWidth={page === 'journal' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Sandbox</span>
         </button>
       </div>
     </Layout>

@@ -34,6 +34,15 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
   // Track the most recently hit target index to trigger the "Fire Blast" Visual Effect
   const [newlyHitTargetIndex, setNewlyHitTargetIndex] = useState<number | null>(null);
   
+  // Sandbox Paper Trades States
+  const [isSandboxOpen, setIsSandboxOpen] = useState(false);
+  const [sandboxSuccess, setSandboxSuccess] = useState(false);
+  const [sbLots, setSbLots] = useState(1);
+  const [sbPrice, setSbPrice] = useState(0);
+  const [sbTarget, setSbTarget] = useState('');
+  const [sbSL, setSbSL] = useState('');
+  const [sbError, setSbError] = useState('');
+  
   useEffect(() => {
     if (!isEditingTrail) {
       setDisplayTrail(signal.trailingSL);
@@ -85,6 +94,133 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
       case TradeStatus.EXITED: return 'bg-slate-800 text-slate-500 border-slate-700';
       case TradeStatus.STOPPED: return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
       default: return 'bg-slate-800 text-slate-400';
+    }
+  };
+
+  const DEFAULT_LOT_SIZES: Record<string, number> = {
+    'NIFTY': 50,
+    'BANKNIFTY': 15,
+    'FINNIFTY': 40,
+    'STOCKS (RELIANCE)': 250,
+    'STOCKS (TCS)': 175,
+  };
+
+  const getLotAndStrikeAndInstrument = () => {
+    const rawInst = (signal.instrument || '').trim().toUpperCase();
+    let computedInstrument = 'NIFTY';
+    if (rawInst.includes('BANKNIFTY') || rawInst.includes('BANK NIFTY')) {
+      computedInstrument = 'BANKNIFTY';
+    } else if (rawInst.includes('FINNIFTY') || rawInst.includes('FIN NIFTY')) {
+      computedInstrument = 'FINNIFTY';
+    } else if (rawInst.includes('RELIANCE')) {
+      computedInstrument = 'STOCKS (RELIANCE)';
+    } else if (rawInst.includes('TCS')) {
+      computedInstrument = 'STOCKS (TCS)';
+    } else {
+      computedInstrument = rawInst || 'NIFTY';
+    }
+
+    const lotSize = DEFAULT_LOT_SIZES[computedInstrument] || 50;
+
+    // Strike parsing as number using regular expression
+    const strikeMatch = (signal.symbol || '').match(/\b\d{4,5}\b/) || (signal.instrument || '').match(/\b\d{4,5}\b/);
+    const strike = strikeMatch ? Number(strikeMatch[0]) : 23000;
+
+    return { lotSize, strike, computedInstrument };
+  };
+
+  const { lotSize: sbLotSize, strike: sbStrike, computedInstrument: sbInstrument } = getLotAndStrikeAndInstrument();
+
+  useEffect(() => {
+    if (isSandboxOpen) {
+      setSbPrice(currentCMP);
+      setSbTarget(signal.targets && signal.targets.length > 0 ? signal.targets[0].toString() : '');
+      setSbSL(signal.stopLoss ? signal.stopLoss.toString() : '');
+      
+      // Default lot is strictly 1 lot, fully editable by the user
+      setSbLots(1);
+      
+      setSandboxSuccess(false);
+      setSbError('');
+    }
+  }, [isSandboxOpen, currentCMP, signal.targets, signal.stopLoss]);
+
+  const handleDeployToSandbox = () => {
+    setSbError('');
+    const parsedLots = Number(sbLots);
+    if (isNaN(parsedLots) || parsedLots <= 0) {
+      setSbError('Lots must be a positive number');
+      return;
+    }
+
+    const parsedPrice = Number(sbPrice);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      setSbError('Price must be a positive number');
+      return;
+    }
+
+    const parsedTarget = sbTarget ? Number(sbTarget) : undefined;
+    if (parsedTarget !== undefined && (isNaN(parsedTarget) || parsedTarget <= 0)) {
+      setSbError('Target must be a positive number');
+      return;
+    }
+
+    const parsedSL = sbSL ? Number(sbSL) : undefined;
+    if (parsedSL !== undefined && (isNaN(parsedSL) || parsedSL <= 0)) {
+      setSbError('Stop Loss must be a positive number');
+      return;
+    }
+
+    const signAction = signal.action === 'BUY' ? 'BUY' : 'SELL';
+    if (signAction === 'BUY') {
+      if (parsedTarget && parsedTarget <= parsedPrice) {
+        setSbError('Buy target must be greater than entry premium');
+        return;
+      }
+      if (parsedSL && parsedSL >= parsedPrice) {
+        setSbError('Buy stop loss must be less than entry premium');
+        return;
+      }
+    } else {
+      if (parsedTarget && parsedTarget >= parsedPrice) {
+        setSbError('Short target must be less than entry premium');
+        return;
+      }
+      if (parsedSL && parsedSL <= parsedPrice) {
+        setSbError('Short stop loss must be greater than entry premium');
+        return;
+      }
+    }
+
+    try {
+      const savedPositionsStr = localStorage.getItem('libra_mock_positions') || '[]';
+      const currentPositions = JSON.parse(savedPositionsStr);
+
+      const newPosition = {
+        id: `PP-${Date.now().toString().slice(-6)}`,
+        signalId: signal.id,
+        instrument: sbInstrument,
+        strike: sbStrike,
+        optionType: signal.type === 'CE' ? 'CE' : signal.type === 'PE' ? 'PE' : 'CE',
+        action: signAction,
+        lots: parsedLots,
+        lotSize: sbLotSize,
+        entryPrice: parsedPrice,
+        cmp: parsedPrice,
+        target: parsedTarget,
+        stopLoss: parsedSL,
+        timestamp: new Date().toISOString(),
+        comment: `Direct paper trade from active signal ${signal.id}`,
+        status: 'OPEN',
+        pnl: 0
+      };
+
+      const updated = [newPosition, ...currentPositions];
+      localStorage.setItem('libra_mock_positions', JSON.stringify(updated));
+      setSandboxSuccess(true);
+    } catch (e) {
+      console.error(e);
+      setSbError('Failed to write to Sandbox storage.');
     }
   };
 
@@ -395,10 +531,21 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
                 )}
             </div>
             {!isExited && (
-              <button onClick={handleAIAnalysis} disabled={loadingAnalysis} className="flex items-center py-1 text-[10px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest transition-colors">
-                  <Cpu size={12} className="mr-1.5" />
-                  {loadingAnalysis ? 'Syncing AI...' : analysis ? 'Close Intel' : 'AI Analysis'}
-              </button>
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={() => setIsSandboxOpen(!isSandboxOpen)} 
+                  className={`flex items-center py-1 text-[10px] font-bold ${isSandboxOpen ? 'text-amber-400' : 'text-amber-500 hover:text-amber-400'} uppercase tracking-widest transition-colors cursor-pointer`}
+                  title="Direct paper trade from this active signal"
+                >
+                    <Briefcase size={12} className="mr-1.5 shrink-0" />
+                    {isSandboxOpen ? 'Cancel Practice' : 'Paper Trade 🚀'}
+                </button>
+
+                <button onClick={handleAIAnalysis} disabled={loadingAnalysis} className="flex items-center py-1 text-[10px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest transition-colors">
+                    <Cpu size={12} className="mr-1.5" />
+                    {loadingAnalysis ? 'Syncing AI...' : analysis ? 'Close Intel' : 'AI Analysis'}
+                </button>
+              </div>
             )}
         </div>
         {analysis && !isExited && (
@@ -408,6 +555,141 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
                 </div>
                 {analysis}
             </div>
+        )}
+
+        {isSandboxOpen && !isExited && (
+          <div className="mt-3 p-4 bg-slate-950 border border-amber-500/20 rounded-xl text-slate-300 animate-in slide-in-from-top-2">
+              <div className="text-amber-400 mb-3 font-bold uppercase tracking-widest text-[10px] border-b border-amber-950/60 pb-1.5 flex items-center justify-between">
+                  <span className="flex items-center">
+                    <Briefcase size={12} className="mr-1.5 text-amber-500 animate-pulse" /> Sandbox Quick-Position Deployer
+                  </span>
+                  <span className="text-[8px] text-slate-500 font-mono font-bold uppercase">Practice Sandbox Trade</span>
+              </div>
+
+              {sandboxSuccess ? (
+                <div className="space-y-3 py-2 text-center">
+                  <div className="inline-flex p-2.5 bg-emerald-500/10 text-emerald-400 rounded-full">
+                    <Check size={18} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-black text-white uppercase tracking-tight">Mock Contract Deployed!</h5>
+                    <p className="text-[10px] text-slate-400 mt-1 max-w-[280px] mx-auto">This contract is now live and tracking simulated PnL in your Sandbox page.</p>
+                  </div>
+                  <div className="flex justify-center space-x-2 pt-2">
+                    <button 
+                      onClick={() => {
+                        setIsSandboxOpen(false);
+                        window.dispatchEvent(new CustomEvent('libra-navigate', { detail: 'journal' }));
+                      }}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-1.5 px-4 rounded-xl text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Go to Sandbox
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setSandboxSuccess(false);
+                        setIsSandboxOpen(false);
+                      }}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-1.5 px-4 rounded-xl text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 font-mono text-[9px] bg-slate-900/60 p-2 rounded-lg border border-slate-800/40 opacity-80">
+                    <div>
+                      <span className="text-slate-500 block text-[8px] uppercase tracking-wider">UNDERLYING / SYMBOL</span>
+                      <span className="text-white font-black uppercase text-[10px]">{sbInstrument} &bull; {signal.symbol}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[8px] uppercase tracking-wider">TYPE / OPTION</span>
+                      <span className="text-white font-black uppercase text-amber-400 text-[10px]">{signal.action} {signal.type}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1">Practice Lots</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={sbLots}
+                        onChange={(e) => setSbLots(Math.max(1, Number(e.target.value)))}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-bold text-center text-xs focus:outline-none focus:border-amber-500/50"
+                      />
+                      <span className="text-[8px] text-slate-500 block mt-1 text-center font-mono">
+                        {sbLots} lots × {sbLotSize} qty = <span className="text-slate-300 font-bold">{sbLots * sbLotSize} shares</span>
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1">Premium Price (₹)</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={sbPrice}
+                        onChange={(e) => setSbPrice(Number(e.target.value))}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-emerald-400 font-bold text-center text-xs focus:outline-none focus:border-amber-500/50 font-mono"
+                      />
+                      <span className="text-[8px] text-slate-500 block mt-1 text-center font-mono">
+                        Base: ₹{entryPrice.toFixed(2)} | CMP: <span className="text-slate-300 font-bold">₹{currentCMP.toFixed(2)}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1">Target Limit (₹)</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        placeholder="Price trigger"
+                        value={sbTarget}
+                        onChange={(e) => setSbTarget(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-center text-xs focus:outline-none focus:border-amber-500/50 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1">Stop Loss (₹)</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        placeholder="Stop trigger"
+                        value={sbSL}
+                        onChange={(e) => setSbSL(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-center text-xs focus:outline-none focus:border-amber-500/50 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {sbError && (
+                    <div className="p-2 bg-rose-950/30 border border-rose-500/15 rounded-lg">
+                      <p className="text-[9px] text-rose-400 font-bold uppercase tracking-tight text-center">{sbError}</p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleDeployToSandbox}
+                      className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-heavy py-2.5 rounded-lg text-[9px] uppercase tracking-wider transition-all flex items-center justify-center shadow-lg cursor-pointer active:scale-95"
+                    >
+                      <Briefcase size={12} className="mr-1.5" /> Deploy Mock Position
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsSandboxOpen(false)}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+          </div>
         )}
       </div>
     </div>

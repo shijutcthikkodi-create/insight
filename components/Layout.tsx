@@ -251,6 +251,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, 
           <NavItem page="insights" icon={Flame} label="Market Insights" />
           <NavItem page="booked" icon={CheckCircle} label="Observed Outcomes" />
           <NavItem page="stats" icon={BarChart2} label="Performance Metrics" />
+          <NavItem page="journal" icon={Briefcase} label="Options Sandbox" isNew />
           <NavItem page="rules" icon={ShieldAlert} label="Rules & Disclaimer" />
           <NavItem page="about" icon={Info} label="About Us" />
           
