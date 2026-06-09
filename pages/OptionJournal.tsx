@@ -97,8 +97,13 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
     return saved ? Number(saved) : 500000; // Default ₹5 Lakh capital
   });
 
-  const [editingCapital, setEditingCapital] = useState(false);
-  const [capitalInput, setCapitalInput] = useState(capital.toString());
+  const [restorationCount, setRestorationCount] = useState<number>(() => {
+    const saved = localStorage.getItem('libra_mock_restoration_count');
+    return saved ? Number(saved) : 0;
+  });
+
+  const [showEraseConfirm, setShowEraseConfirm] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Brokerage & Regulatory Charges States
   const [brokerageBuy, setBrokerageBuy] = useState<number>(() => {
@@ -171,6 +176,13 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
 
     const totalCharges = Math.round((entryCharges + exitCharges) * 100) / 100;
     const grossPnl = Math.round((pos.action === 'BUY' ? (currentPrice - pos.entryPrice) : (pos.entryPrice - currentPrice)) * qty * 100) / 100;
+
+    // Explicitly handle profit and loss outcomes safely to guarantee that:
+    // 1. If trade is in profit (grossPnl > 0), charges will reduce the net profit: profit reduces.
+    // 2. If trade is in loss (grossPnl <= 0), charges will increase the net loss (making net P&L more negative/worse).
+    // Mathematically, (grossPnl - totalCharges) handles both:
+    // e.g. Gross Profit of ₹500 - ₹20 charges = ₹480 Net Profit.
+    // e.g. Gross Loss of -₹500 - ₹20 charges = -₹520 Net Loss.
     const netPnl = Math.round((grossPnl - totalCharges) * 100) / 100;
 
     return {
@@ -306,12 +318,13 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
     });
   }, [signals]);
 
-  const handleUpdateCapital = () => {
-    const val = Number(capitalInput);
-    if (!isNaN(val) && val > 0) {
-      setCapital(val);
-      setEditingCapital(false);
-    }
+  const handleRestoreCapital = () => {
+    setCapital(500000);
+    setRestorationCount(prev => {
+      const next = prev + 1;
+      localStorage.setItem('libra_mock_restoration_count', next.toString());
+      return next;
+    });
   };
 
   const handleSquareOffPosition = (id: string, customExitPrice?: number) => {
@@ -335,18 +348,17 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
   };
 
   const handleDeletePosition = (id: string) => {
-    if (window.confirm("Delete this trade from your journal?")) {
-      setPositions(prev => prev.filter(p => p.id !== id));
-    }
+    setPositions(prev => prev.filter(p => p.id !== id));
   };
 
   const handleResetJournal = () => {
-    if (window.confirm("Are you sure you want to completely erase your practice journal and trade history? This cannot be undone.")) {
-      setPositions([]);
-      setCapital(500000);
-      localStorage.removeItem(STORAGE_KEYS.POSITIONS);
-      localStorage.removeItem(STORAGE_KEYS.INITIAL_CAPITAL);
-    }
+    setPositions([]);
+    setCapital(500000);
+    setRestorationCount(0);
+    localStorage.removeItem(STORAGE_KEYS.POSITIONS);
+    localStorage.removeItem(STORAGE_KEYS.INITIAL_CAPITAL);
+    localStorage.removeItem('libra_mock_restoration_count');
+    setShowEraseConfirm(false);
   };
 
   // Helper formats
@@ -480,27 +492,24 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
           <p className="text-slate-400 text-sm font-mono tracking-tighter italic">Simulated Risk-Testing & Option Position Journal</p>
         </div>
         <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
-          {/* Capital editor */}
-          <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl font-mono text-xs">
-            <span className="text-slate-500">Practice Capital:</span>
-            {editingCapital ? (
-              <div className="flex items-center space-x-1">
-                <input
-                  type="number"
-                  value={capitalInput}
-                  onChange={e => setCapitalInput(e.target.value)}
-                  className="w-24 bg-slate-950 text-white rounded px-1.5 py-0.5 border border-blue-500 font-bold focus:outline-none"
-                  autoFocus
-                />
-                <button onClick={handleUpdateCapital} className="text-emerald-500 hover:text-emerald-400 font-bold px-1 text-[10px] uppercase">Save</button>
-                <button onClick={() => setEditingCapital(false)} className="text-slate-500 hover:text-slate-400 font-bold px-1 text-[10px] uppercase">Cancel</button>
-              </div>
-            ) : (
-              <div className="flex items-center space-x-2">
-                <span className="text-white font-heavy">{formatRupees(capital)}</span>
-                <button onClick={() => { setCapitalInput(capital.toString()); setEditingCapital(true); }} className="text-blue-500 hover:text-blue-400 font-bold text-[10px] uppercase">Edit</button>
-              </div>
-            )}
+          {/* Capital restoration */}
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl font-mono text-xs">
+              <span className="text-slate-500">Practice Capital:</span>
+              <span className="text-white font-heavy">{formatRupees(capital)}</span>
+              {restorationCount > 0 && (
+                <span className="text-[9px] text-amber-500 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold" title={`${restorationCount} restoration(s) made`}>
+                  {restorationCount} Restored
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleRestoreCapital}
+              className="px-3 py-1.5 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 hover:text-blue-300 border border-blue-900/40 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest cursor-pointer flex items-center justify-center"
+              title="Restore practice capital back to default ₹5,00,000"
+            >
+              <RotateCcw size={11} className="mr-1" /> Restore
+            </button>
           </div>
 
           {/* Brokerage & Charges Settings Toggle Button */}
@@ -520,12 +529,30 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
             <Percent size={12} className="mr-1.5" /> Brokerage & Charges
           </button>
 
-          <button 
-            onClick={handleResetJournal} 
-            className="flex items-center px-3 py-1.5 bg-slate-900/50 hover:bg-rose-950/30 text-rose-500 hover:text-rose-400 border border-slate-800 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest"
-          >
-            <RotateCcw size={12} className="mr-1.5" /> Erase Journal
-          </button>
+          {showEraseConfirm ? (
+            <div className="flex items-center bg-rose-950/20 border border-rose-900/40 p-1 px-2 rounded-xl animate-in zoom-in-95 duration-150">
+              <span className="text-[9px] text-rose-400 font-bold uppercase tracking-tight mr-2 pl-1">Erase ALL history?</span>
+              <button 
+                onClick={handleResetJournal} 
+                className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition-all text-[9px] font-black uppercase tracking-wider animate-pulse"
+              >
+                Yes, Erase
+              </button>
+              <button 
+                onClick={() => setShowEraseConfirm(false)} 
+                className="ml-1 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg transition-all text-[9px] font-black uppercase tracking-wider"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => setShowEraseConfirm(true)} 
+              className="flex items-center px-3 py-1.5 bg-slate-900/50 hover:bg-rose-950/30 text-rose-500 hover:text-rose-400 border border-slate-800 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest cursor-pointer"
+            >
+              <RotateCcw size={12} className="mr-1.5" /> Erase Journal
+            </button>
+          )}
         </div>
       </div>
 
@@ -763,9 +790,12 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                         
                         {/* Position meta */}
                         <div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 flex-wrap gap-1">
                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${pos.action === 'BUY' ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'}`}>
-                              {pos.action} × {pos.lots} lots
+                              {pos.action}
+                            </span>
+                            <span className="bg-slate-900 border border-slate-800 text-slate-300 font-mono text-[9px] px-1.5 py-0.5 rounded font-bold">
+                              {pos.lots} lots ({qty} qty)
                             </span>
                             <span className="text-xs font-black text-white uppercase tracking-tight">
                               {pos.instrument} {pos.strike} {pos.optionType}
@@ -773,9 +803,12 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                             <span className="text-[7px] font-mono text-slate-600">ID: {pos.id}</span>
                           </div>
 
-                          <div className="flex items-center space-x-3 mt-1 text-[10px] text-slate-400 font-medium">
-                            <div className="flex items-center">
-                              <Clock size={11} className="mr-1 text-slate-600" />
+                          <div className="flex items-center space-x-3 mt-1.5 text-[10px] text-slate-400 font-medium">
+                            <div className="flex items-center flex-wrap gap-1.5">
+                              <span className="text-slate-500 font-mono text-[8px] bg-slate-900 px-1 py-0.5 rounded">
+                                Size: {pos.lotSize}/lot
+                              </span>
+                              <Clock size={11} className="text-slate-600" />
                               <span>{new Date(pos.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                             </div>
                             {pos.comment && <div className="text-slate-500 truncate max-w-[150px] md:max-w-[250px]" title={pos.comment}>"{pos.comment}"</div>}
@@ -811,13 +844,15 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                             <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block leading-none mb-0.5">Net P&L</span>
                             {(() => {
                               const { grossPnl, totalCharges, netPnl } = getTradeCharges(pos);
+                              const entryValue = pos.entryPrice * qty;
+                              const netPercent = entryValue > 0 ? (netPnl / entryValue) * 100 : percentGain;
                               return (
                                 <>
                                   <span className={`text-sm font-black font-mono block ${netPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                                     {netPnl >= 0 ? '+' : ''}{formatRupees(netPnl)}
                                   </span>
                                   <span className={`text-[9px] font-mono font-bold block ${netPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    {netPnl >= 0 ? '+' : ''}{percentGain.toFixed(2)}%
+                                    {netPnl >= 0 ? '+' : ''}{netPercent.toFixed(2)}%
                                   </span>
                                   <div className="text-[9px] font-mono text-slate-500 mt-1 space-y-1 whitespace-nowrap">
                                     <span title="Gross return before brokerage and regulatory charges">G: <span className={grossPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}>{formatRupees(grossPnl)}</span></span>
@@ -1072,12 +1107,33 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                         })()}
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <button 
-                          onClick={() => handleDeletePosition(pos.id)}
-                          className="p-1 px-1.5 hover:bg-rose-950/40 text-slate-600 hover:text-rose-500 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {confirmDeleteId === pos.id ? (
+                          <div className="flex items-center space-x-1 justify-end animate-in fade-in zoom-in-95 duration-150">
+                            <button
+                              onClick={() => {
+                                handleDeletePosition(pos.id);
+                                setConfirmDeleteId(null);
+                              }}
+                              className="text-[9px] bg-rose-600 hover:bg-rose-500 text-white font-bold px-1.5 py-1 rounded uppercase transition-all"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-1.5 py-1 rounded uppercase transition-all"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => setConfirmDeleteId(pos.id)}
+                            className="p-1 px-1.5 hover:bg-rose-950/40 text-slate-600 hover:text-rose-500 rounded-lg transition-colors"
+                            title="Delete trade"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

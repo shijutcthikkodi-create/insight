@@ -37,7 +37,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
   // Sandbox Paper Trades States
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [sandboxSuccess, setSandboxSuccess] = useState(false);
-  const [sbLots, setSbLots] = useState(1);
+  const [sbQuantity, setSbQuantity] = useState(0);
+  const [sbMultiplier, setSbMultiplier] = useState(1);
   const [sbPrice, setSbPrice] = useState(0);
   const [sbTarget, setSbTarget] = useState('');
   const [sbSL, setSbSL] = useState('');
@@ -131,27 +132,39 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
 
   const { lotSize: sbLotSize, strike: sbStrike, computedInstrument: sbInstrument } = getLotAndStrikeAndInstrument();
 
-  useEffect(() => {
-    if (isSandboxOpen) {
-      setSbPrice(currentCMP);
+  const toggleSandbox = () => {
+    if (!isSandboxOpen) {
+      // Show default entry price from the card, editable if needed
+      setSbPrice(Number(signal.entryPrice || 0));
       setSbTarget(signal.targets && signal.targets.length > 0 ? signal.targets[0].toString() : '');
+      // Show default stop loss from the card, editable if needed
       setSbSL(signal.stopLoss ? signal.stopLoss.toString() : '');
       
-      // Default lot is strictly 1 lot, fully editable by the user
-      setSbLots(1);
+      // Default quantity matches the card quantity, fully editable
+      setSbQuantity(signal.quantity || sbLotSize || 50);
+      setSbMultiplier(1);
       
       setSandboxSuccess(false);
       setSbError('');
     }
-  }, [isSandboxOpen, currentCMP, signal.targets, signal.stopLoss]);
+    setIsSandboxOpen(!isSandboxOpen);
+  };
 
   const handleDeployToSandbox = () => {
     setSbError('');
-    const parsedLots = Number(sbLots);
-    if (isNaN(parsedLots) || parsedLots <= 0) {
-      setSbError('Lots must be a positive number');
+    const parsedQuantity = Number(sbQuantity);
+    if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
+      setSbError('Quantity must be a positive number');
       return;
     }
+
+    const parsedMultiplier = Number(sbMultiplier);
+    if (isNaN(parsedMultiplier) || parsedMultiplier <= 0) {
+      setSbError('Quantity multiplier must be a positive number');
+      return;
+    }
+
+    const finalQuantity = parsedQuantity * parsedMultiplier;
 
     const parsedPrice = Number(sbPrice);
     if (isNaN(parsedPrice) || parsedPrice <= 0) {
@@ -203,8 +216,8 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
         strike: sbStrike,
         optionType: signal.type === 'CE' ? 'CE' : signal.type === 'PE' ? 'PE' : 'CE',
         action: signAction,
-        lots: parsedLots,
-        lotSize: sbLotSize,
+        lots: parsedMultiplier,
+        lotSize: parsedQuantity,
         entryPrice: parsedPrice,
         cmp: parsedPrice,
         target: parsedTarget,
@@ -533,7 +546,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
             {!isExited && (
               <div className="flex items-center space-x-3">
                 <button 
-                  onClick={() => setIsSandboxOpen(!isSandboxOpen)} 
+                  onClick={toggleSandbox} 
                   className={`flex items-center py-1 text-[10px] font-bold ${isSandboxOpen ? 'text-amber-400' : 'text-amber-500 hover:text-amber-400'} uppercase tracking-widest transition-colors cursor-pointer`}
                   title="Direct paper trade from this active signal"
                 >
@@ -609,23 +622,38 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1">Practice Lots</label>
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Quantity (Qty)</label>
                       <input
                         type="number"
                         min="1"
-                        value={sbLots}
-                        onChange={(e) => setSbLots(Math.max(1, Number(e.target.value)))}
+                        value={sbQuantity}
+                        onChange={(e) => setSbQuantity(Math.max(1, Number(e.target.value)))}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-bold text-center text-xs focus:outline-none focus:border-amber-500/50"
                       />
-                      <span className="text-[8px] text-slate-500 block mt-1 text-center font-mono">
-                        {sbLots} lots × {sbLotSize} qty = <span className="text-slate-300 font-bold">{sbLots * sbLotSize} shares</span>
+                      <span className="text-[7.5px] text-slate-500 block mt-1 text-center font-mono">
+                        Base (1 Lot)
                       </span>
                     </div>
 
                     <div>
-                      <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1">Premium Price (₹)</label>
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Lots</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={sbMultiplier}
+                        onChange={(e) => setSbMultiplier(Math.max(1, Number(e.target.value)))}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-amber-400 font-bold text-center text-xs focus:outline-none focus:border-amber-500/50 font-mono"
+                      />
+                      <span className="text-[7.5px] text-slate-500 block mt-1 text-center font-mono">
+                        Multiplier
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Premium Price (₹)</label>
                       <input
                         type="number"
                         step="0.05"
@@ -633,8 +661,32 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
                         onChange={(e) => setSbPrice(Number(e.target.value))}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-emerald-400 font-bold text-center text-xs focus:outline-none focus:border-amber-500/50 font-mono"
                       />
-                      <span className="text-[8px] text-slate-500 block mt-1 text-center font-mono">
-                        Base: ₹{entryPrice.toFixed(2)} | CMP: <span className="text-slate-300 font-bold">₹{currentCMP.toFixed(2)}</span>
+                      <span className="text-[7.5px] text-slate-400 block mt-1 text-center font-mono text-ellipsis overflow-hidden whitespace-nowrap">
+                        Base Price: ₹{entryPrice.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Quick Lot Selector</span>
+                      <span className="text-[8px] text-slate-500 font-mono">CMP: ₹{currentCMP.toFixed(2)}</span>
+                    </div>
+                    <div className="flex bg-slate-900 rounded-lg border border-slate-800 p-0.5">
+                      {[1, 2, 3, 5, 10].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSbMultiplier(m)}
+                          className={`flex-1 py-1 text-[9px] font-black rounded-md transition-all cursor-pointer ${sbMultiplier === m ? 'bg-amber-500/20 text-amber-400 shadow-sm' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'}`}
+                        >
+                          {m}x
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-center mt-2 border border-dashed border-amber-950/40 bg-amber-950/10 rounded-lg py-1.5 px-2 font-mono">
+                      <span className="text-[9px] text-amber-500/95 font-bold uppercase block">
+                        Deploying: {sbQuantity} Qty &times; {sbMultiplier} Lot = <span className="text-white font-heavy text-xs">{sbQuantity * sbMultiplier}</span> shares ({sbMultiplier} {sbMultiplier === 1 ? 'Lot' : 'Lots'})
                       </span>
                     </div>
                   </div>
