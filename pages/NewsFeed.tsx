@@ -165,25 +165,40 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
     const sheetEdited: Record<string, NewsItem> = {};
     const sheetDeleted = new Set<string>();
 
+    const safeParseJson = (str: string): any => {
+      let cleaned = str.trim();
+      cleaned = cleaned.replace(/&quot;/g, '"');
+      cleaned = cleaned.replace(/\\"/g, '"');
+      cleaned = cleaned.replace(/""/g, '"');
+      if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+        cleaned = cleaned.substring(1, cleaned.length - 1);
+      }
+      return JSON.parse(cleaned);
+    };
+
     const newsMessages = [...messages]
-      .filter(m => m.text.startsWith('LIBRA_NEWS_V1:'))
+      .filter(m => m.text.includes('LIBRA_NEWS_V1:'))
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     newsMessages.forEach(m => {
       try {
-        const parts = m.text.split('LIBRA_NEWS_V1:');
+        const text = m.text.trim();
+        const startIdx = text.indexOf('LIBRA_NEWS_V1:');
+        if (startIdx === -1) return;
+        const subStr = text.substring(startIdx);
+        const parts = subStr.split('LIBRA_NEWS_V1:');
         if (parts.length < 2) return;
         const rest = parts[1];
 
         if (rest.startsWith('ADD:')) {
           const itemJson = rest.substring(4);
-          const item = JSON.parse(itemJson) as NewsItem;
+          const item = safeParseJson(itemJson) as NewsItem;
           if (!sheetCustom.some(it => it.id === item.id)) {
             sheetCustom.unshift(item);
           }
         } else if (rest.startsWith('UPDATE_NEWS:')) {
           const itemJson = rest.substring(12);
-          const item = JSON.parse(itemJson) as NewsItem;
+          const item = safeParseJson(itemJson) as NewsItem;
           sheetEdited[item.id] = item;
           const idx = sheetCustom.findIndex(it => it.id === item.id);
           if (idx !== -1) {
