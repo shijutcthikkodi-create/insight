@@ -82,6 +82,7 @@ export interface OrderStatus {
 }
 
 export interface InsightData {
+  id?: string;
   type: 'TREND' | 'DOMINANCE' | 'FLOW';
   symbol: string;
   viewOrigin?: number;
@@ -96,6 +97,8 @@ export interface InsightData {
   pattern?: 'Narrow' | 'Range';
   phase?: 'Accumulation' | 'Distribution';
   isDead?: boolean;
+  status?: string;
+  exitDate?: string;
 }
 
 export interface ChatMessage {

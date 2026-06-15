@@ -1,14 +1,16 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { TrendingUp, Activity, BarChart3, Target, Clock, ShieldCheck, Flame, Timer, Shield, Users, Lock, History } from 'lucide-react';
-import { InsightData, WatchlistItem } from '../types';
+import { TrendingUp, Activity, BarChart3, Target, Clock, ShieldCheck, Flame, Timer, Shield, Users, Lock, History, Briefcase, Check, AlertCircle } from 'lucide-react';
+import { InsightData, WatchlistItem, User } from '../types';
+import { updateSheetData } from '../services/googleSheetsService';
 
 interface MarketInsightsProps {
   insights?: InsightData[];
   watchlist?: WatchlistItem[];
+  user?: User | null;
 }
 
-type TabID = 'TREND' | 'DOMINANCE' | 'FLOW';
+type TabID = 'TREND' | 'DOMINANCE' | 'FLOW' | 'BOOKED';
 
 const isBullish = (val: any): boolean => {
   const s = String(val || '').trim().toUpperCase();
@@ -68,7 +70,7 @@ const checkProtectionHit = (insight: InsightData, watchlist: WatchlistItem[]): b
   return (isBull && currentPrice <= protectionPrice) || (isBear && currentPrice >= protectionPrice);
 };
 
-const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlist = [] }) => {
+const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlist = [], user = null }) => {
   const [activeTab, setActiveTab] = useState<TabID>('TREND');
   const [highlightedSymbol, setHighlightedSymbol] = useState<string | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,16 +93,20 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
   };
 
   const trendData = useMemo(() => {
-    const base = insights.filter(i => i.type === 'TREND' || !!i.sentiment);
-    return sortProtectedToBottom(base);
+    return insights.filter(i => (i.type === 'TREND' || !!i.sentiment) && !checkProtectionHit(i, watchlist) && String(i.status || '').toLowerCase() !== 'closed');
   }, [insights, watchlist]);
 
   const participantsData = useMemo(() => {
-    const base = insights.filter(i => i.type === 'DOMINANCE' || (!!i.category && !!i.sentiment));
-    return sortProtectedToBottom(base);
+    return insights.filter(i => (i.type === 'DOMINANCE' || (!!i.category && !!i.sentiment)) && !checkProtectionHit(i, watchlist) && String(i.status || '').toLowerCase() !== 'closed');
   }, [insights, watchlist]);
 
-  const flowData = useMemo(() => insights.filter(i => i.type === 'FLOW' || !!i.pattern || !!i.phase), [insights]);
+  const flowData = useMemo(() => {
+    return insights.filter(i => (i.type === 'FLOW' || !!i.pattern || !!i.phase) && !checkProtectionHit(i, watchlist) && String(i.status || '').toLowerCase() !== 'closed');
+  }, [insights, watchlist]);
+
+  const bookedData = useMemo(() => {
+    return insights.filter(i => checkProtectionHit(i, watchlist) || String(i.status || '').toLowerCase() === 'closed');
+  }, [insights, watchlist]);
 
   const handleAssetClick = (symbol: string) => {
     if (highlightTimeoutRef.current) {
@@ -175,6 +181,24 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
             </button>
           ))}
         </div>
+
+        {/* Clickable Booked Trades tab button placed just below the Trend tab */}
+        <div className="flex justify-start px-1">
+          <button
+            onClick={() => {
+              setActiveTab('BOOKED');
+              setHighlightedSymbol(null);
+            }}
+            className={`flex items-center space-x-2 py-2 px-4 rounded-[12px] border transition-all duration-300 cursor-pointer ${
+              activeTab === 'BOOKED'
+                ? 'bg-rose-950/60 border-rose-500/80 text-rose-400 shadow-lg shadow-rose-950/30'
+                : 'bg-slate-900 border-slate-800 text-rose-400/80 hover:text-rose-400 hover:border-rose-900/50 hover:bg-slate-800/40'
+            }`}
+          >
+            <ShieldCheck size={12} className={activeTab === 'BOOKED' ? 'animate-pulse text-rose-400' : 'text-rose-400/70'} />
+            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Booked Trades ({bookedData.length})</span>
+          </button>
+        </div>
       </div>
 
       <div className="min-h-[400px] animate-in slide-in-from-bottom-4 duration-500">
@@ -187,6 +211,7 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
                   key={i} 
                   insight={d}
                   watchlist={watchlist}
+                  user={user}
                   isHighlighted={highlightedSymbol === name}
                   onSelect={() => handleAssetClick(name)}
                 />
@@ -208,6 +233,7 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
                   key={i} 
                   insight={d}
                   watchlist={watchlist}
+                  user={user}
                   isHighlighted={highlightedSymbol === name}
                   onSelect={() => handleAssetClick(name)}
                 />
@@ -228,6 +254,7 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
                 <FlowPatternCard 
                   key={i} 
                   insight={d}
+                  user={user}
                   isHighlighted={highlightedSymbol === name}
                 />
               );
@@ -238,7 +265,305 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
             )}
           </div>
         )}
+
+        {activeTab === 'BOOKED' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {bookedData.length > 0 ? (
+              bookedData.map((d, i) => {
+                const { name } = parseSymbol(d.symbol);
+                if (d.type === 'DOMINANCE' || (!!d.category && !!d.sentiment && d.type !== 'TREND')) {
+                  return (
+                    <ParticipantLogicRow 
+                      key={`booked-${i}`} 
+                      insight={d}
+                      watchlist={watchlist}
+                      user={user}
+                      isHighlighted={highlightedSymbol === name}
+                      onSelect={() => handleAssetClick(name)}
+                      isBooked={true}
+                    />
+                  );
+                }
+                if (d.type === 'FLOW') {
+                  return (
+                    <FlowPatternCard 
+                      key={`booked-${i}`} 
+                      insight={d}
+                      watchlist={watchlist}
+                      user={user}
+                      isHighlighted={highlightedSymbol === name}
+                      isBooked={true}
+                    />
+                  );
+                }
+                return (
+                  <TrendStrengthCard 
+                    key={`booked-${i}`} 
+                    insight={d}
+                    watchlist={watchlist}
+                    user={user}
+                    isHighlighted={highlightedSymbol === name}
+                    onSelect={() => handleAssetClick(name)}
+                    isBooked={true}
+                  />
+                );
+              })
+            ) : (
+              <div className="md:col-span-2 text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl">
+                <p className="text-slate-600 font-black uppercase text-xs tracking-widest">No Booked Trades Secured yet...</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+    </div>
+  );
+};
+
+interface SubPaperTradeFormProps {
+  name: string;
+  defaultPrice: number;
+  defaultSL?: number;
+  sentiment?: string;
+  user?: User | null;
+  onClose: () => void;
+}
+
+const SubPaperTradeForm: React.FC<SubPaperTradeFormProps> = ({ 
+  name, 
+  defaultPrice, 
+  defaultSL, 
+  sentiment, 
+  user, 
+  onClose 
+}) => {
+  const [qty, setQty] = useState<number>(100);
+  const [price, setPrice] = useState<number>(defaultPrice || 0);
+  const [target, setTarget] = useState<string>('');
+  const [sl, setSl] = useState<string>(defaultSL ? defaultSL.toString() : '');
+  const [success, setSuccess] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+
+  const isBull = isBullish(sentiment);
+  const isBear = isBearish(sentiment);
+  const detectedAction = isBear ? 'SELL' : 'BUY';
+
+  const handleDeploy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setError('');
+
+    if (!qty || qty <= 0) {
+      setError('Please enter a valid quantity');
+      return;
+    }
+    if (!price || price <= 0) {
+      setError('Please enter a valid price');
+      return;
+    }
+
+    const parsedTarget = target ? Number(target) : undefined;
+    if (parsedTarget !== undefined && (isNaN(parsedTarget) || parsedTarget <= 0)) {
+      setError('Target must be a positive number');
+      return;
+    }
+
+    const parsedSL = sl ? Number(sl) : undefined;
+    if (parsedSL !== undefined && (isNaN(parsedSL) || parsedSL <= 0)) {
+      setError('Stop Loss must be a positive number');
+      return;
+    }
+
+    if (detectedAction === 'BUY') {
+      if (parsedTarget && parsedTarget <= price) {
+        setError('Buy target must be greater than entry price');
+        return;
+      }
+      if (parsedSL && parsedSL >= price) {
+        setError('Buy stop loss must be less than entry price');
+        return;
+      }
+    } else {
+      if (parsedTarget && parsedTarget >= price) {
+        setError('Short target must be less than entry price');
+        return;
+      }
+      if (parsedSL && parsedSL <= price) {
+        setError('Short stop loss must be greater than entry price');
+        return;
+      }
+    }
+
+    try {
+      const savedPositionsStr = localStorage.getItem('libra_mock_positions') || '[]';
+      const currentPositions = JSON.parse(savedPositionsStr);
+
+      const newPosition = {
+        id: `PP-${Date.now().toString().slice(-6)}`,
+        instrument: name.toUpperCase(),
+        strike: 0,
+        optionType: 'EQ', // Physical Equity
+        action: detectedAction,
+        lots: 1,
+        lotSize: qty,
+        entryPrice: price,
+        cmp: price,
+        target: parsedTarget,
+        stopLoss: parsedSL,
+        timestamp: new Date().toISOString(),
+        comment: `Direct equity paper trade from Market Insights`,
+        status: 'OPEN',
+        pnl: 0
+      };
+
+      const updated = [newPosition, ...currentPositions];
+      localStorage.setItem('libra_mock_positions', JSON.stringify(updated));
+      setSuccess(true);
+
+      // Log to Sheet
+      updateSheetData('logs', 'ADD', {
+        timestamp: new Date().toISOString(),
+        user: user ? user.name : 'Anonymous Student',
+        action: 'PAPER_TRADE_OPEN',
+        details: `[Phone: ${user?.phoneNumber || 'N/A'}] Deployed Equity trade: ${detectedAction} ${name.toUpperCase()} (Qty: ${qty} @ ₹${price})`,
+        type: 'TRADE'
+      });
+    } catch (e) {
+      console.error(e);
+      setError('Failed to deploy to Sandbox storage.');
+    }
+  };
+
+  return (
+    <div className="mt-3 p-4 bg-slate-950 border border-amber-500/20 rounded-xl text-slate-300 animate-in slide-in-from-top-2 text-left" onClick={(e) => e.stopPropagation()}>
+      <div className="text-amber-400 mb-3 font-bold uppercase tracking-widest text-[10px] border-b border-amber-950/60 pb-1.5 flex items-center justify-between">
+        <span className="flex items-center">
+          <Briefcase size={12} className="mr-1.5 text-amber-500 animate-pulse" /> Equity Simulator Deployer
+        </span>
+        <span className="text-[8px] text-slate-500 font-mono font-bold uppercase">Practice Sandbox Trade</span>
+      </div>
+
+      {success ? (
+        <div className="space-y-3 py-2 text-center">
+          <div className="inline-flex p-2 bg-emerald-500/10 text-emerald-400 rounded-full">
+            <Check size={16} strokeWidth={3} />
+          </div>
+          <div>
+            <h5 className="text-[11px] font-black text-white uppercase tracking-tight">Equity Position Deployed!</h5>
+            <p className="text-[9px] text-slate-400 mt-0.5 max-w-[240px] mx-auto leading-normal">Simulated shares are now live and tracking PnL under the Simulator tab.</p>
+          </div>
+          <div className="flex justify-center space-x-2 pt-1">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+                window.dispatchEvent(new CustomEvent('libra-navigate', { detail: 'journal' }));
+              }}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 px-3 rounded-lg text-[8px] uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Go to Simulator
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setSuccess(false);
+                onClose();
+              }}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-1 px-3 rounded-lg text-[8px] uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 gap-2 font-mono text-[8px] bg-slate-900/60 p-2 rounded-lg border border-slate-800/40 opacity-80">
+            <div>
+              <span className="text-slate-500 block text-[7px] uppercase tracking-wider">INSTRUMENT / TAPE</span>
+              <span className="text-white font-black uppercase text-[9px]">{name} &bull; EQUITY</span>
+            </div>
+            <div>
+              <span className="text-slate-500 block text-[7px] uppercase tracking-wider">SUGGESTED ACTION</span>
+              <span className={`font-black uppercase text-[9px] ${detectedAction === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>{detectedAction} (EQUITY)</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div>
+              <label className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block mb-1">Quantity (Qty)</label>
+              <input
+                type="number"
+                min="1"
+                value={qty}
+                onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-white font-bold text-center text-xs focus:outline-none focus:border-amber-500/30 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block mb-1">Entry Price (₹)</label>
+              <input
+                type="number"
+                min="0.1"
+                step="0.05"
+                value={price}
+                onChange={(e) => setPrice(Math.max(0.1, Number(e.target.value)))}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-white font-bold text-center text-xs focus:outline-none focus:border-amber-500/30 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block mb-1">Target Price (₹) ops</label>
+              <input
+                type="number"
+                placeholder="Optional"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-emerald-400 font-bold text-center text-xs focus:outline-none focus:border-amber-500/30 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block mb-1">Stop Loss (₹) ops</label>
+              <input
+                type="number"
+                placeholder="Optional"
+                value={sl}
+                onChange={(e) => setSl(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-rose-400 font-bold text-center text-xs focus:outline-none focus:border-amber-500/30 font-mono"
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center space-x-1.5 p-1.5 bg-rose-500/10 border border-rose-500/20 rounded text-rose-400 font-mono text-[8px] uppercase tracking-wider">
+              <AlertCircle size={10} className="shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex space-x-2 pt-1 border-t border-slate-950">
+            <button
+              onClick={handleDeploy}
+              className={`flex-1 flex items-center justify-center font-bold text-[9px] uppercase tracking-wider py-1.5 rounded-lg transition-all cursor-pointer ${
+                detectedAction === 'BUY' 
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow shadow-emerald-950' 
+                  : 'bg-rose-600 hover:bg-rose-500 text-white shadow shadow-rose-950'
+              }`}
+            >
+              <Briefcase size={10} className="mr-1.5" /> Deploy simulated position
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="px-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 font-medium text-[9px] uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -246,13 +571,16 @@ const MarketInsights: React.FC<MarketInsightsProps> = ({ insights = [], watchlis
 interface TrendStrengthCardProps {
   insight: InsightData;
   watchlist?: WatchlistItem[];
+  user?: User | null;
   isHighlighted?: boolean;
   onSelect?: () => void;
+  isBooked?: boolean;
 }
 
-const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlist = [], isHighlighted, onSelect }) => {
+const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlist = [], user = null, isHighlighted, onSelect, isBooked }) => {
   const { symbol, sentiment, strength = 50, viewOrigin, protection, cmp: directCmp, date } = insight;
   const { name } = parseSymbol(symbol);
+  const [isPaperTradeOpen, setIsPaperTradeOpen] = useState(false);
   
   const isBull = isBullish(sentiment);
   const isBear = isBearish(sentiment);
@@ -267,7 +595,7 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
   const isProtectionHit = checkProtectionHit(insight, watchlist);
 
   const status = isProtectionHit ? "Level Invalidated" : isBull ? "Active Buyers" : isBear ? "Active Sellers" : isNeut ? "Consolidation" : "Neutral";
-  const displaySentiment = isProtectionHit ? 'PROTECTED' : isBull ? 'BULLISH' : isBear ? 'BEARISH' : isNeut ? 'NEUTRAL' : (sentiment?.toUpperCase() || 'MONITORING');
+  const displaySentiment = isBull ? 'BULLISH' : isBear ? 'BEARISH' : isNeut ? 'NEUTRAL' : (sentiment?.toUpperCase() || 'MONITORING');
   
   const priceDiff = (currentPrice !== null && originPrice !== null) ? (currentPrice - originPrice) : null;
 
@@ -283,19 +611,17 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onSelect?.()}
       className={`bg-slate-900 border rounded-2xl p-4 shadow-xl relative overflow-hidden transition-all duration-500 cursor-pointer group/card
-        ${isHighlighted ? 'border-blue-500 ring-2 ring-blue-500/20 animate-box-glow scale-[1.02] z-10' : 'border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'}
-        ${isProtectionHit ? 'opacity-30 grayscale-[0.8]' : ''}
+        ${isHighlighted ? 'border-blue-500 ring-2 ring-blue-500/20 animate-box-glow scale-[1.02] z-10' : isProtectionHit ? 'border-rose-950/70 hover:border-rose-900/65' : 'border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'}
       `}
     >
-      {/* PROTECTION OVERLAY STAMP */}
-      {isProtectionHit && (
-        <div className="absolute inset-0 z-[10] bg-slate-950/20 backdrop-blur-[0.5px] flex items-center justify-center pointer-events-none">
-           <div className="status-stamp text-rose-500 scale-[0.8]">
+      {isBooked && (
+        <div className="absolute inset-0 z-[100] bg-slate-950/10 flex items-center justify-center pointer-events-none">
+           <div className={`status-stamp ${isPositiveOutcome ? 'text-emerald-500' : 'text-rose-500'} scale-[0.8] rotate-[-12deg]`}>
               <div className="flex flex-col items-center">
-                 <span className="text-xl tracking-[0.2em]">PROTECTED</span>
-                 <div className="flex items-center mt-0.5 space-x-1">
-                    <History size={10} />
-                    <span className="text-[8px] font-bold opacity-60 uppercase">LEVEL INVALIDATED</span>
+                 <span className="text-xl tracking-[0.2em] font-black">{isPositiveOutcome ? 'BOOKED PROFIT' : 'BOOKED LOSS'}</span>
+                 <div className="flex items-center mt-1 space-x-1.5 text-[8px] font-bold opacity-60 uppercase">
+                    <ShieldCheck size={10} />
+                    <span>Position Secured</span>
                  </div>
               </div>
            </div>
@@ -312,6 +638,11 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
               {cleanDate && (
                 <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
                     <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{cleanDate}</span>
+                </div>
+              )}
+              {insight.exitDate && (
+                <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-rose-950/40 border border-rose-500/30">
+                    <span className="text-[7px] font-black text-rose-400 uppercase tracking-widest">EXITED: {insight.exitDate}</span>
                 </div>
               )}
             </div>
@@ -336,10 +667,10 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
           <div className="mt-2 flex items-center justify-between border-t border-slate-800/30 pt-2">
             <div>
               <div className="flex items-center space-x-2">
-                <span className={`text-[10px] font-black uppercase tracking-widest ${isProtectionHit ? 'text-rose-500' : isBull ? 'text-emerald-500' : isBear ? 'text-rose-500' : isNeut ? 'text-blue-400' : 'text-slate-500'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${isBull ? 'text-emerald-500' : isBear ? 'text-rose-500' : isNeut ? 'text-blue-400' : 'text-slate-500'}`}>
                   {displaySentiment} BIAS
                 </span>
-                <div className={`w-1.5 h-1.5 rounded-full ${isProtectionHit ? 'bg-rose-500 animate-none' : isBull ? 'bg-emerald-500' : isBear ? 'bg-rose-500' : isNeut ? 'bg-blue-500' : 'bg-slate-500'} ${!isProtectionHit ? 'animate-pulse' : ''}`} />
+                <div className={`w-1.5 h-1.5 rounded-full ${isBull ? 'bg-emerald-500' : isBear ? 'bg-rose-500' : isNeut ? 'bg-blue-500' : 'bg-slate-500'} animate-pulse`} />
               </div>
             </div>
             <span className={`text-[9px] font-black uppercase tracking-tighter ${isProtectionHit ? 'text-rose-400/60' : isBull ? 'text-emerald-400/80' : isBear ? 'text-rose-400/80' : isNeut ? 'text-blue-300/80' : 'text-slate-500'}`}>
@@ -371,7 +702,7 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
         </div>
       </div>
       
-      <div className="relative h-4 bg-slate-950 rounded-full border border-slate-800 p-0.5 flex pointer-events-none">
+      <div className="relative h-4 bg-slate-950 rounded-full border border-slate-800 p-0.5 flex pointer-events-none mb-3">
         <div 
           className={`h-full rounded-full transition-all duration-1000 ease-out shadow-lg ${
             isProtectionHit ? 'bg-slate-800 grayscale' :
@@ -388,6 +719,33 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
           <span className="text-[7px] text-white/30 font-black font-mono">100</span>
         </div>
       </div>
+
+      {!isProtectionHit && (
+        <div className="pt-2.5 border-t border-slate-800/40 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsPaperTradeOpen(!isPaperTradeOpen);
+            }}
+            className="flex items-center text-[9px] font-black text-amber-500 hover:text-amber-400 uppercase tracking-widest transition-colors cursor-pointer"
+          >
+            <Briefcase size={11} className="mr-1.5 shrink-0 animate-pulse text-amber-500" />
+            {isPaperTradeOpen ? 'Cancel Practice' : 'Paper Trade 🚀'}
+          </button>
+          <span className="text-[8px] font-mono font-bold text-slate-500 uppercase">Simulator Ready</span>
+        </div>
+      )}
+
+      {isPaperTradeOpen && !isProtectionHit && (
+        <SubPaperTradeForm 
+          name={name}
+          defaultPrice={currentPrice || originPrice || 0}
+          defaultSL={protectionPrice || undefined}
+          sentiment={sentiment}
+          user={user}
+          onClose={() => setIsPaperTradeOpen(false)}
+        />
+      )}
     </div>
   );
 };
@@ -395,13 +753,17 @@ const TrendStrengthCard: React.FC<TrendStrengthCardProps> = ({ insight, watchlis
 interface ParticipantLogicRowProps {
   insight: InsightData;
   watchlist?: WatchlistItem[];
+  user?: User | null;
   isHighlighted?: boolean;
   onSelect?: () => void;
+  isBooked?: boolean;
 }
 
-const ParticipantLogicRow: React.FC<ParticipantLogicRowProps> = ({ insight, watchlist = [], isHighlighted, onSelect }) => {
-  const { symbol, category, sentiment, viewOrigin, date, protection } = insight;
+const ParticipantLogicRow: React.FC<ParticipantLogicRowProps> = ({ insight, watchlist = [], user = null, isHighlighted, onSelect, isBooked }) => {
+  const { symbol, category, sentiment, viewOrigin, date, protection, cmp: directCmp } = insight;
   const { name } = parseSymbol(symbol);
+  const [isPaperTradeOpen, setIsPaperTradeOpen] = useState(false);
+  
   const originPrice = viewOrigin || null;
   const normCategory = String(category || '').trim().toUpperCase();
   const isBull = isBullish(sentiment);
@@ -410,8 +772,15 @@ const ParticipantLogicRow: React.FC<ParticipantLogicRowProps> = ({ insight, watc
   const cleanDate = formatOnlyDate(date);
   const duration = getDurationLabel(category);
   
+  const watchItem = watchlist.find(w => w.symbol.toUpperCase().includes(name.toUpperCase()));
   const isProtectionHit = checkProtectionHit(insight, watchlist);
   const protectionPrice = protection || null;
+
+  const currentPrice = directCmp || (watchItem ? watchItem.price : null);
+  const priceDiff = (currentPrice !== null && originPrice !== null) ? (currentPrice - originPrice) : null;
+  const isPositiveOutcome = isBear 
+    ? (priceDiff !== null && priceDiff <= 0) 
+    : (priceDiff !== null && priceDiff >= 0);
 
   let status = isProtectionHit ? "PROTECTED" : "Balanced";
   let colorTheme = isProtectionHit ? "rose" : "blue";
@@ -447,83 +816,133 @@ const ParticipantLogicRow: React.FC<ParticipantLogicRowProps> = ({ insight, watc
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onSelect?.()}
-      className={`bg-slate-900 border rounded-2xl p-3 flex items-center justify-between shadow-md transition-all duration-500 cursor-pointer group/card relative overflow-hidden
-        ${isHighlighted ? 'border-blue-500 ring-2 ring-blue-500/20 animate-box-glow scale-[1.01] z-10' : 'border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'}
-        ${isProtectionHit ? 'opacity-30 grayscale-[0.8]' : ''}
+      className={`bg-slate-900 border rounded-2xl p-3 flex flex-col justify-between shadow-md transition-all duration-500 cursor-pointer group/card relative overflow-hidden
+        ${isHighlighted ? 'border-blue-500 ring-2 ring-blue-500/20 animate-box-glow scale-[1.01] z-10' : isProtectionHit ? 'border-rose-950/70 hover:border-rose-900/65' : 'border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'}
       `}
     >
-      {isProtectionHit && (
-        <div className="absolute inset-0 z-10 bg-rose-500/5 pointer-events-none flex items-center justify-center">
-            <span className="status-stamp text-rose-500 text-[10px] scale-[0.7] rotate-[-5deg]">PROTECTED</span>
+      {isBooked && (
+        <div className="absolute inset-0 z-[100] bg-slate-950/10 flex items-center justify-center pointer-events-none">
+           <div className={`status-stamp ${isPositiveOutcome ? 'text-emerald-500' : 'text-rose-500'} scale-[0.8] rotate-[-12deg]`}>
+              <div className="flex flex-col items-center">
+                 <span className="text-xl tracking-[0.2em] font-black">{isPositiveOutcome ? 'BOOKED PROFIT' : 'BOOKED LOSS'}</span>
+                 <div className="flex items-center mt-1 space-x-1.5 text-[8px] font-bold opacity-60 uppercase">
+                    <ShieldCheck size={10} />
+                    <span>Position Secured</span>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
 
-      <div className="flex items-center space-x-3 pointer-events-none">
-        <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 font-mono font-black border border-slate-700 text-[10px]`}>
-          {name.substring(0, 2).toUpperCase()}
-        </div>
-        <div>
-          <div className="flex items-center space-x-1.5">
-            <span className="text-sm font-black text-white uppercase tracking-tight font-mono leading-none group-hover/card:text-blue-400 transition-colors">
-              {name}
-            </span>
-            {cleanDate && <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest">{cleanDate}</span>}
+      <div className="flex items-center justify-between w-full">
+        <div className="flex items-center space-x-3 pointer-events-none">
+          <div className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 font-mono font-black border border-slate-700 text-[10px]`}>
+            {name.substring(0, 2).toUpperCase()}
           </div>
-          {originPrice !== null && (
-            <div className="flex items-center space-x-1.5 mt-0.5">
-              <span className="text-[6px] font-black text-slate-500 uppercase tracking-widest">FROM-</span>
-              <span className="text-[9px] font-mono font-bold text-slate-400">₹{originPrice.toLocaleString('en-IN')}</span>
+          <div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-sm font-black text-white uppercase tracking-tight font-mono leading-none group-hover/card:text-blue-400 transition-colors">
+                {name}
+              </span>
+              {cleanDate && <span className="text-[7px] font-black text-slate-600 uppercase tracking-widest">{cleanDate}</span>}
+              {insight.exitDate && <span className="text-[7px] font-black text-rose-400 bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-500/30 uppercase tracking-widest leading-none">EXITED: {insight.exitDate}</span>}
             </div>
-          )}
-          <span className={`text-[8px] font-black uppercase tracking-widest ${isProtectionHit ? 'text-rose-500' : isBull ? 'text-emerald-500' : isBear ? 'text-rose-500' : 'text-blue-400'}`}>
-            {isProtectionHit ? 'PROTECTED' : isBull ? 'BULLISH' : isBear ? 'BEARISH' : 'NEUTRAL'} BIAS
-          </span>
-        </div>
-      </div>
-      
-      <div className="flex-1 flex flex-col items-center justify-center pointer-events-none px-4">
-        <div className={`px-4 py-1 rounded-full border transition-all shadow-inner font-black text-[9px] uppercase tracking-widest ${
-          isProtectionHit ? 'bg-rose-950/20 border-rose-500/20 text-rose-500/70' :
-          colorTheme === 'rose' ? 'bg-slate-950 border-rose-500/40 text-rose-400' :
-          colorTheme === 'emerald' ? 'bg-slate-950 border-emerald-500/40 text-emerald-400' :
-          'bg-slate-950 border-blue-500/40 text-blue-400'
-        }`}>
-          {isProtectionHit ? 'LEVEL EXPIRED' : displayCategory}
-        </div>
-        {duration && !isProtectionHit && <span className="text-[7px] font-black text-slate-600 uppercase tracking-tighter mt-1">{duration}</span>}
-        {isProtectionHit && protectionPrice && (
-            <span className="text-[7px] font-black text-rose-500/60 uppercase tracking-tighter mt-1 flex items-center">
-                <Lock size={8} className="mr-1" /> ₹{protectionPrice.toLocaleString('en-IN')} Triggered
+            {originPrice !== null && (
+              <div className="flex items-center space-x-1.5 mt-0.5">
+                <span className="text-[6px] font-black text-slate-500 uppercase tracking-widest">FROM-</span>
+                <span className="text-[9px] font-mono font-bold text-slate-400">₹{originPrice.toLocaleString('en-IN')}</span>
+              </div>
+            )}
+            <span className={`text-[8px] font-black uppercase tracking-widest ${isBull ? 'text-emerald-500' : isBear ? 'text-rose-500' : 'text-blue-400'}`}>
+              {isBull ? 'BULLISH' : isBear ? 'BEARISH' : 'NEUTRAL'} BIAS
             </span>
-        )}
+          </div>
+        </div>
+        
+        <div className="flex-1 flex flex-col items-center justify-center pointer-events-none px-4">
+          <div className={`px-4 py-1 rounded-full border transition-all shadow-inner font-black text-[9px] uppercase tracking-widest ${
+            isProtectionHit ? 'bg-rose-950/20 border-rose-500/20 text-rose-500/70' :
+            colorTheme === 'rose' ? 'bg-slate-950 border-rose-500/40 text-rose-400' :
+            colorTheme === 'emerald' ? 'bg-slate-950 border-emerald-500/40 text-emerald-400' :
+            'bg-slate-950 border-blue-500/40 text-blue-400'
+          }`}>
+            {isProtectionHit ? 'LEVEL EXPIRED' : displayCategory}
+          </div>
+          {duration && !isProtectionHit && <span className="text-[7px] font-black text-slate-600 uppercase tracking-tighter mt-1">{duration}</span>}
+          {isProtectionHit && protectionPrice && (
+              <span className="text-[7px] font-black text-rose-500/60 uppercase tracking-tighter mt-1 flex items-center">
+                  <Lock size={8} className="mr-1" /> ₹{protectionPrice.toLocaleString('en-IN')} Triggered
+              </span>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-2 text-right min-w-[120px]">
+          <span className={`text-[9px] font-black uppercase tracking-tighter ${isProtectionHit ? 'text-rose-600' : textClasses[colorTheme]} select-none pointer-events-none`}>
+            {status}
+          </span>
+          {!isProtectionHit ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsPaperTradeOpen(!isPaperTradeOpen);
+              }}
+              className={`p-1.5 rounded-lg border transition-all ${isPaperTradeOpen ? 'bg-amber-600 border-amber-500 text-white' : 'bg-slate-950 border-slate-800 text-amber-500 hover:border-amber-500/55 hover:bg-slate-900'} cursor-pointer`}
+              title="Deploy Paper Trade"
+            >
+              <Briefcase size={11} className="shrink-0" />
+            </button>
+          ) : (
+            <History size={12} className="text-rose-900 pointer-events-none" />
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center space-x-2 text-right min-w-[100px] pointer-events-none">
-        <span className={`text-[9px] font-black uppercase tracking-tighter ${isProtectionHit ? 'text-rose-600' : textClasses[colorTheme]}`}>
-          {status}
-        </span>
-        {isProtectionHit ? <History size={12} className="text-rose-900" /> : <Target size={12} className="text-slate-700 group-hover/card:text-blue-500 transition-colors" />}
-      </div>
+      {isPaperTradeOpen && !isProtectionHit && (
+        <SubPaperTradeForm 
+          name={name}
+          defaultPrice={watchItem?.price || originPrice || 0}
+          defaultSL={protectionPrice || undefined}
+          sentiment={sentiment}
+          user={user}
+          onClose={() => setIsPaperTradeOpen(false)}
+        />
+      )}
     </div>
   );
 };
 
 interface FlowPatternCardProps {
   insight: InsightData;
+  watchlist?: WatchlistItem[];
+  user?: User | null;
   isHighlighted?: boolean;
+  isBooked?: boolean;
 }
 
-const FlowPatternCard: React.FC<FlowPatternCardProps> = ({ insight, isHighlighted }) => {
-  const { symbol, pattern, phase, sentiment, viewOrigin, date } = insight;
+const FlowPatternCard: React.FC<FlowPatternCardProps> = ({ insight, watchlist = [], user = null, isHighlighted, isBooked }) => {
+  const { symbol, pattern, phase, sentiment, viewOrigin, date, cmp: directCmp } = insight;
   const { name } = parseSymbol(symbol);
+  const [isPaperTradeOpen, setIsPaperTradeOpen] = useState(false);
   const originPrice = viewOrigin || null;
   const cleanDate = formatOnlyDate(date);
   
+  const watchItem = watchlist.find(w => w.symbol.toUpperCase().includes(name.toUpperCase()));
+  const currentPrice = directCmp || (watchItem ? watchItem.price : null);
+
   const isAcc = isBullish(phase) || isBullish(pattern);
   const isDis = isBearish(phase) || isBearish(pattern);
   const isNeut = isNeutral(phase) || isNeutral(pattern);
   const isTrendNeut = isNeutral(sentiment);
   const isHFR = isHfr(pattern) || isHfr(phase);
+  const isClosed = String(insight.status || '').toLowerCase() === 'closed';
+
+  const isBull = isAcc || isBullish(sentiment);
+  const isBear = isDis || isBearish(sentiment);
+
+  const priceDiff = (currentPrice !== null && originPrice !== null) ? (currentPrice - originPrice) : null;
+  const isPositiveOutcome = isBear 
+    ? (priceDiff !== null && priceDiff <= 0) 
+    : (priceDiff !== null && priceDiff >= 0);
 
   const displayPattern = isHFR ? 'HIGH FREQUENCY' : (pattern || 'QUANTUM').toUpperCase();
   const subTitle = isTrendNeut ? "Cautious Bias" : isAcc ? "Accumulation" : isDis ? "Distribution" : isNeut ? "Consolidation" : (isHFR ? "HIGH FREQUENCY" : (phase || "Monitoring"));
@@ -547,10 +966,24 @@ const FlowPatternCard: React.FC<FlowPatternCardProps> = ({ insight, isHighlighte
   return (
     <div 
       id={`flow-${name}`}
-      className={`bg-slate-900 border rounded-2xl p-4 shadow-xl transition-all duration-500 flex flex-col h-full group 
-        ${isHighlighted ? 'border-blue-500 ring-2 ring-blue-500/20 animate-box-glow scale-[1.01] z-10' : 'border-slate-800'}
+      className={`bg-slate-900 border rounded-2xl p-4 shadow-xl transition-all duration-500 flex flex-col h-full group relative overflow-hidden
+        ${isHighlighted ? 'border-blue-500 ring-2 ring-blue-500/20 animate-box-glow scale-[1.01] z-10' : isClosed ? 'border-rose-950/70 hover:border-rose-900/65' : 'border-slate-800'}
       `}
     >
+      {isBooked && (
+        <div className="absolute inset-0 z-[100] bg-slate-950/10 flex items-center justify-center pointer-events-none">
+           <div className={`status-stamp ${isPositiveOutcome ? 'text-emerald-500' : 'text-rose-500'} scale-[0.8] rotate-[-12deg]`}>
+              <div className="flex flex-col items-center">
+                 <span className="text-xl tracking-[0.2em] font-black">{isPositiveOutcome ? 'BOOKED PROFIT' : 'BOOKED LOSS'}</span>
+                 <div className="flex items-center mt-1 space-x-1.5 text-[8px] font-bold opacity-60 uppercase">
+                    <ShieldCheck size={10} />
+                    <span>Position Secured</span>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-start mb-4">
         <div>
           <div className="flex items-center space-x-1.5">
@@ -560,6 +993,11 @@ const FlowPatternCard: React.FC<FlowPatternCardProps> = ({ insight, isHighlighte
             {cleanDate && (
                <div className="flex items-center space-x-1 px-1.5 py-0.5 rounded bg-slate-800">
                   <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">{cleanDate}</span>
+               </div>
+            )}
+            {insight.exitDate && (
+               <div className="flex items-center space-x-1.5 px-1.5 py-0.5 rounded bg-rose-950/40 border border-rose-500/30">
+                  <span className="text-[7px] font-black text-rose-400 uppercase tracking-widest leading-none">EXITED: {insight.exitDate}</span>
                </div>
             )}
           </div>
@@ -576,7 +1014,7 @@ const FlowPatternCard: React.FC<FlowPatternCardProps> = ({ insight, isHighlighte
         </span>
       </div>
       
-      <div className="flex-1 min-h-[80px] bg-slate-950 rounded-xl border border-slate-800/50 relative overflow-hidden flex flex-col items-center justify-center p-3">
+      <div className="flex-1 min-h-[80px] bg-slate-950 rounded-xl border border-slate-800/50 relative overflow-hidden flex flex-col items-center justify-center p-3 mb-3">
         <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 100 40" preserveAspectRatio="none">
           <path 
             d={isHFR 
@@ -592,6 +1030,30 @@ const FlowPatternCard: React.FC<FlowPatternCardProps> = ({ insight, isHighlighte
           {subTitle}
         </span>
       </div>
+
+      <div className="pt-2.5 border-t border-slate-800/40 flex items-center justify-between mt-auto">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsPaperTradeOpen(!isPaperTradeOpen);
+          }}
+          className="flex items-center text-[9px] font-black text-amber-500 hover:text-amber-400 uppercase tracking-widest transition-colors cursor-pointer"
+        >
+          <Briefcase size={11} className="mr-1.5 shrink-0 animate-pulse text-amber-500" />
+          {isPaperTradeOpen ? 'Cancel Practice' : 'Paper Trade 🚀'}
+        </button>
+        <span className="text-[8px] font-mono font-bold text-slate-500 uppercase">Simulator Ready</span>
+      </div>
+
+      {isPaperTradeOpen && (
+        <SubPaperTradeForm 
+          name={name}
+          defaultPrice={originPrice || 0}
+          sentiment={sentiment}
+          user={user}
+          onClose={() => setIsPaperTradeOpen(false)}
+        />
+      )}
     </div>
   );
 };

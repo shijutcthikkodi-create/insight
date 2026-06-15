@@ -222,7 +222,9 @@ export const fetchSheetData = async (retries = 3): Promise<SheetData | null> => 
         viewOrigin: getNum(ins, 'originPrice') ?? getNum(ins, 'viewOrigin'),
         protection: getNum(ins, 'protection'),
         cmp: getNum(ins, 'cmp'),
-        date: String(getVal(ins, 'date') || '').trim()
+        date: String(getVal(ins, 'date') || '').trim(),
+        status: String(getVal(ins, 'status') || '').trim(),
+        exitDate: String(getVal(ins, 'exitDate') || '').trim()
       }))
     };
   } catch (error) {

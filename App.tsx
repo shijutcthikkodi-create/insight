@@ -499,15 +499,38 @@ const App: React.FC = () => {
 
           const insightKey = `${insight.type}-${insight.symbol}-${insight.date || ''}`;
           
-          if (deadInsightsRef.current.has(insightKey)) {
-            return { ...insight, isDead: true };
+          const isClosedInSheet = String(insight.status || '').toLowerCase() === 'closed';
+
+          if (isClosedInSheet || deadInsightsRef.current.has(insightKey)) {
+            return {
+              ...insight,
+              isDead: true,
+              status: 'closed',
+              exitDate: insight.exitDate || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+            };
           }
 
           if (protectionPrice !== null && currentPrice !== null) {
             const isHit = (isBull && currentPrice <= protectionPrice) || (isBear && currentPrice >= protectionPrice);
             if (isHit) {
               deadInsightsRef.current.add(insightKey);
-              return { ...insight, isDead: true };
+              
+              const exitDateStr = insight.exitDate || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+              
+              if (String(insight.status || '').toLowerCase() !== 'closed') {
+                updateSheetData('insights', 'UPDATE_INSIGHT', {
+                  ...insight,
+                  status: 'closed',
+                  exitDate: exitDateStr
+                }, insight.id || insight.symbol);
+              }
+
+              return {
+                ...insight,
+                isDead: true,
+                status: 'closed',
+                exitDate: exitDateStr
+              };
             }
           }
           
@@ -784,10 +807,10 @@ const App: React.FC = () => {
 
       {page === 'dashboard' && <Dashboard watchlist={watchlist} signals={signals} messages={messages} user={user} granularHighlights={granularHighlights} activeMajorAlerts={activeMajorAlerts} activeWatchlistAlerts={activeWatchlistAlerts} activeIntelAlert={activeIntelAlert} onSignalUpdate={handleSignalUpdate} />}
       {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} messages={messages} />}
-      {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} />}
+      {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} user={user} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
       {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}
-      {page === 'journal' && <OptionsJournal signals={signals} />}
+      {page === 'journal' && <OptionsJournal signals={signals} user={user} watchlist={watchlist} />}
       {page === 'rules' && <Rules />}
       {page === 'about' && <About />}
       {user?.isAdmin && page === 'admin' && <Admin watchlist={watchlist} onUpdateWatchlist={() => {}} signals={signals} onUpdateSignals={() => {}} users={users} onUpdateUsers={() => {}} logs={logs} messages={messages} onNavigate={setPage} onHardSync={() => { deadSignalsRef.current.clear(); deadInsightsRef.current.clear(); return sync(true); }} />}

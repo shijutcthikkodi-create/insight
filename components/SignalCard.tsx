@@ -3,6 +3,7 @@ import { ArrowUpRight, ArrowDownRight, Target, Cpu, Edit2, Check, X, TrendingUp,
 import { TradeSignal, TradeStatus, OptionType, User } from '../types';
 import { analyzeTradeSignal } from '../services/geminiService';
 import { copySignalCardToClipboard } from '../services/whatsappService';
+import { updateSheetData } from '../services/googleSheetsService';
 
 interface SignalCardProps {
   signal: TradeSignal;
@@ -231,6 +232,15 @@ const SignalCard: React.FC<SignalCardProps> = ({ signal, user, highlights, isMaj
       const updated = [newPosition, ...currentPositions];
       localStorage.setItem('libra_mock_positions', JSON.stringify(updated));
       setSandboxSuccess(true);
+
+      // Log practice deployment to shared central logs
+      updateSheetData('logs', 'ADD', {
+        timestamp: new Date().toISOString(),
+        user: user ? user.name : 'Anonymous Student',
+        action: 'PAPER_TRADE_OPEN',
+        details: `[Phone: ${user?.phoneNumber || 'N/A'}] Deployed paper trade: ${signAction} ${sbInstrument} ${sbStrike} ${signal.type} (Lots: ${parsedMultiplier}, Qty: ${finalQuantity} @ ₹${parsedPrice})`,
+        type: 'TRADE'
+      });
     } catch (e) {
       console.error(e);
       setSbError('Failed to write to Sandbox storage.');

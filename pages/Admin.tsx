@@ -40,6 +40,7 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
 
   // Search/Filter states
   const [userSearch, setUserSearch] = useState('');
+  const [showOnlyPaperTraders, setShowOnlyPaperTraders] = useState(false);
 
   // Editing state for users
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -75,21 +76,53 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
     localStorage.setItem('libra_show_broadcaster', String(showBroadcasterName));
   }, [broadcasterName, showBroadcasterName]);
 
+  const paperStats = useMemo<Record<string, { totalDeployments: number; lastActive: string; completedTrades: number }>>(() => {
+    const stats: Record<string, { totalDeployments: number; lastActive: string; completedTrades: number }> = {};
+    
+    (logs || []).forEach(log => {
+      if (log.type === 'TRADE' && log.action && log.action.startsWith('PAPER_TRADE_')) {
+        const userName = log.user;
+        if (!stats[userName]) {
+          stats[userName] = {
+            totalDeployments: 0,
+            lastActive: log.timestamp,
+            completedTrades: 0
+          };
+        }
+        
+        if (log.action === 'PAPER_TRADE_OPEN') {
+          stats[userName].totalDeployments += 1;
+        } else if (log.action.includes('CLOSE') || log.action.includes('TARGET') || log.action.includes('SL')) {
+          stats[userName].completedTrades += 1;
+        }
+        
+        if (new Date(log.timestamp).getTime() > new Date(stats[userName].lastActive).getTime()) {
+          stats[userName].lastActive = log.timestamp;
+        }
+      }
+    });
+    
+    return stats;
+  }, [logs]);
+
   const activeSignals = useMemo(() => {
     return (signals || []).filter(s => s.status === TradeStatus.ACTIVE || s.status === TradeStatus.PARTIAL);
   }, [signals]);
 
   const filteredUsers = useMemo(() => {
     let list = users;
+    if (showOnlyPaperTraders) {
+      list = list.filter(u => !!paperStats[u.name]);
+    }
     if (userSearch) {
       const s = userSearch.toLowerCase();
-      list = users.filter(u => 
+      list = list.filter(u => 
         u.name.toLowerCase().includes(s) || 
         u.phoneNumber.includes(s)
       );
     }
     return list;
-  }, [users, userSearch]);
+  }, [users, userSearch, showOnlyPaperTraders, paperStats]);
 
   const sortedLogs = useMemo(() => {
     return [...logs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -738,9 +771,65 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                 <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center">
                     <Users size={14} className="mr-2 text-blue-500" /> Institutional Subscriber List ({users.length})
                 </h3>
-                <div className="relative w-full md:w-80">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
-                    <input type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search by name or phone..." className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-[10px] text-white focus:border-blue-500 outline-none font-bold placeholder:text-slate-700" />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <button
+                        onClick={() => setShowOnlyPaperTraders(!showOnlyPaperTraders)}
+                        className={`flex items-center justify-center space-x-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all border cursor-pointer ${
+                            showOnlyPaperTraders 
+                              ? 'bg-amber-600 border-amber-500/50 text-white shadow-lg shadow-amber-950/40' 
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                        }`}
+                    >
+                        <Briefcase size={11} className={showOnlyPaperTraders ? 'animate-pulse' : ''} />
+                        <span>{showOnlyPaperTraders ? 'Showing Paper Traders' : 'Filter Paper Traders'}</span>
+                    </button>
+                    <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
+                        <input type="text" value={userSearch} onChange={e => setUserSearch(e.target.value)} placeholder="Search by name or phone..." className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-[10px] text-white focus:border-blue-500 outline-none font-bold placeholder:text-slate-700" />
+                    </div>
+                </div>
+            </div>
+
+            {/* Paper Trading Insights Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in duration-500">
+                <div className="bg-gradient-to-br from-slate-900 to-amber-950/10 border border-amber-500/20 p-5 rounded-3xl shadow-xl flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Active Paper Traders</p>
+                            <h4 className="text-2xl font-black text-white mt-1">
+                                {Object.keys(paperStats).length} <span className="text-[10px] font-bold text-slate-500 uppercase">Users</span>
+                            </h4>
+                        </div>
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-500">
+                            <Activity size={20} className="animate-pulse" />
+                        </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-3 uppercase tracking-wider font-bold">Total registered user accounts with simulated trade logs.</p>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-5 rounded-3xl shadow-xl col-span-2">
+                    <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-3">Live Practice Activity Ledger</p>
+                    <div className="max-h-[85px] overflow-y-auto pr-1 space-y-2 scrollbar-none">
+                        {Object.keys(paperStats).length === 0 ? (
+                            <p className="text-slate-600 text-[10px] font-black uppercase tracking-widest italic py-2">No simulated trades recorded yet.</p>
+                        ) : (
+                            (Object.entries(paperStats) as [string, { totalDeployments: number; lastActive: string; completedTrades: number }][])
+                                .sort((a, b) => new Date(b[1].lastActive).getTime() - new Date(a[1].lastActive).getTime())
+                                .map(([name, stat], idx) => (
+                                    <div key={idx} className="flex items-center justify-between text-[10px] bg-slate-950/50 p-2 rounded-xl border border-slate-800/60">
+                                        <div className="flex items-center space-x-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                                            <span className="font-bold text-slate-300 uppercase">{name}</span>
+                                        </div>
+                                        <div className="flex items-center space-x-4">
+                                            <span className="text-slate-500">Deployments: <strong className="text-amber-500 font-black">{stat.totalDeployments}</strong></span>
+                                            <span className="text-slate-500">Closed: <strong className="text-emerald-500 font-black">{stat.completedTrades}</strong></span>
+                                            <span className="text-slate-600 font-mono text-[9px]">Last Active: {new Date(stat.lastActive).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                        </div>
+                                    </div>
+                                ))
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -807,7 +896,14 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                                                         <span className="text-sm font-black text-white uppercase tracking-tight">{u.name}</span>
                                                         {u.isAdmin && <Shield size={10} className="text-purple-400" />}
                                                     </div>
-                                                    <span className="text-[10px] font-bold font-mono text-slate-500">{u.phoneNumber}</span>
+                                                    <div className="flex items-center space-x-2 mt-1">
+                                                        <span className="text-[10px] font-bold font-mono text-slate-500">{u.phoneNumber}</span>
+                                                        {paperStats[u.name] && (
+                                                            <span className="bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[8px] font-black px-1.5 py-0.5 rounded tracking-widest uppercase flex items-center">
+                                                                <Briefcase size={8} className="mr-1 animate-pulse" /> SANDBOX ({paperStats[u.name].totalDeployments} TRADES)
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>

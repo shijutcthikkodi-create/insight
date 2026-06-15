@@ -33,7 +33,8 @@ import {
   Bar, 
   Cell 
 } from 'recharts';
-import { TradeSignal } from '../types';
+import { TradeSignal, User, WatchlistItem } from '../types';
+import { updateSheetData } from '../services/googleSheetsService';
 
 // Types for Options Journal
 export interface MockOptionPosition {
@@ -63,6 +64,8 @@ export interface MockOptionPosition {
 
 interface OptionsJournalProps {
   signals?: TradeSignal[];
+  user?: User | null;
+  watchlist?: WatchlistItem[];
 }
 
 const STORAGE_KEYS = {
@@ -78,7 +81,7 @@ const DEFAULT_LOT_SIZES: Record<string, number> = {
   'STOCKS (TCS)': 175,
 };
 
-const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
+const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [], user = null, watchlist = [] }) => {
   // Load state from localStorage or defaults
   const [positions, setPositions] = useState<MockOptionPosition[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.POSITIONS);
@@ -196,9 +199,9 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
     };
   };
 
-  // Real-Time Sync loop to lock onto Sheets CMP feed
+  // Real-Time Sync loop to lock onto Sheets CMP feed and Watchlist for physical Equity positions
   useEffect(() => {
-    if (!signals || signals.length === 0) return;
+    if ((!signals || signals.length === 0) && (!watchlist || watchlist.length === 0)) return;
 
     setPositions(prev => {
       let changed = false;
@@ -207,8 +210,35 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
 
         // Try to find matching sheet signal
         let matchingSig = signals.find(s => s.id === pos.signalId);
+        let newCmp = pos.cmp;
+        let isSLHit = false;
+        let isAllTarget = false;
+        let isExited = false;
+        let isFound = false;
 
-        if (!matchingSig) {
+        if (pos.optionType === 'EQ') {
+          // Sync with live Stock quote from Watchlist
+          const watchItem = watchlist.find(w => w.symbol.toUpperCase().includes(pos.instrument.toUpperCase()));
+          if (watchItem) {
+            newCmp = watchItem.price;
+            isFound = true;
+          }
+        } else if (matchingSig) {
+          isSLHit = matchingSig.status === 'STOP LOSS HIT';
+          isAllTarget = matchingSig.status === 'ALL TARGET DONE';
+          isExited = matchingSig.status === 'EXITED' || isSLHit || isAllTarget;
+          
+          newCmp = isNaN(Number(matchingSig.cmp)) || matchingSig.cmp === undefined || matchingSig.cmp === null 
+            ? Number(matchingSig.entryPrice || 0) 
+            : Number(matchingSig.cmp);
+          
+          if (isSLHit) {
+            newCmp = Number(matchingSig.stopLoss || 0);
+          } else if (isAllTarget && matchingSig.targets && matchingSig.targets.length > 0) {
+            newCmp = Number(matchingSig.targets[matchingSig.targets.length - 1]);
+          }
+          isFound = true;
+        } else if (signals.length > 0) {
           // Fallback matching by Instrument + Strike + Type + Action
           matchingSig = signals.find(s => {
             const rawInst = (s.instrument || '').trim().toUpperCase();
@@ -236,23 +266,26 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                    optType === pos.optionType &&
                    actionType === pos.action;
           });
+
+          if (matchingSig) {
+            isSLHit = matchingSig.status === 'STOP LOSS HIT';
+            isAllTarget = matchingSig.status === 'ALL TARGET DONE';
+            isExited = matchingSig.status === 'EXITED' || isSLHit || isAllTarget;
+            
+            newCmp = isNaN(Number(matchingSig.cmp)) || matchingSig.cmp === undefined || matchingSig.cmp === null 
+              ? Number(matchingSig.entryPrice || 0) 
+              : Number(matchingSig.cmp);
+            
+            if (isSLHit) {
+              newCmp = Number(matchingSig.stopLoss || 0);
+            } else if (isAllTarget && matchingSig.targets && matchingSig.targets.length > 0) {
+              newCmp = Number(matchingSig.targets[matchingSig.targets.length - 1]);
+            }
+            isFound = true;
+          }
         }
 
-        if (matchingSig) {
-          const isSLHit = matchingSig.status === 'STOP LOSS HIT';
-          const isAllTarget = matchingSig.status === 'ALL TARGET DONE';
-          const isExited = matchingSig.status === 'EXITED' || isSLHit || isAllTarget;
-          
-          let newCmp = isNaN(Number(matchingSig.cmp)) || matchingSig.cmp === undefined || matchingSig.cmp === null 
-            ? Number(matchingSig.entryPrice || 0) 
-            : Number(matchingSig.cmp);
-          
-          if (isSLHit) {
-            newCmp = Number(matchingSig.stopLoss || 0);
-          } else if (isAllTarget && matchingSig.targets && matchingSig.targets.length > 0) {
-            newCmp = Number(matchingSig.targets[matchingSig.targets.length - 1]);
-          }
-
+        if (isFound) {
           if (newCmp < 0.05) newCmp = 0.05;
           newCmp = Math.round(newCmp * 100) / 100;
 
@@ -270,18 +303,45 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
             finalPrice = pos.target;
             finalTime = new Date().toISOString();
             changed = true;
+            if (user) {
+              updateSheetData('logs', 'ADD', {
+                timestamp: new Date().toISOString(),
+                user: user.name,
+                action: 'PAPER_TRADE_AUTO_TARGET',
+                details: `[Phone: ${user.phoneNumber}] Target achieved on ${pos.instrument}${pos.optionType === 'EQ' ? '' : ` ${pos.strike}`} (Exit: ₹${pos.target})`,
+                type: 'TRADE'
+              });
+            }
           } else if (isSLReached) {
             newCmp = pos.stopLoss!;
             finalStatus = 'CLOSED';
             finalPrice = pos.stopLoss;
             finalTime = new Date().toISOString();
             changed = true;
+            if (user) {
+              updateSheetData('logs', 'ADD', {
+                timestamp: new Date().toISOString(),
+                user: user.name,
+                action: 'PAPER_TRADE_AUTO_SL',
+                details: `[Phone: ${user.phoneNumber}] Stop Loss triggered on ${pos.instrument}${pos.optionType === 'EQ' ? '' : ` ${pos.strike}`} (Exit: ₹${pos.stopLoss})`,
+                type: 'TRADE'
+              });
+            }
           } else if (isExited) {
             // Auto close if parent contract exited
             finalStatus = 'CLOSED';
             finalPrice = newCmp;
             finalTime = new Date().toISOString();
             changed = true;
+            if (user) {
+              updateSheetData('logs', 'ADD', {
+                timestamp: new Date().toISOString(),
+                user: user.name,
+                action: 'PAPER_TRADE_AUTO_CLOSE',
+                details: `[Phone: ${user.phoneNumber}] Parent signal exited: auto squared-off ${pos.instrument}${pos.optionType === 'EQ' ? '' : ` ${pos.strike}`} (Exit: ₹${newCmp})`,
+                type: 'TRADE'
+              });
+            }
           } else if (newCmp !== pos.cmp) {
             changed = true;
           }
@@ -299,7 +359,7 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
             exitPrice: finalPrice,
             exitTimestamp: finalTime,
             pnl,
-            signalId: pos.signalId || matchingSig.id
+            signalId: pos.signalId || (matchingSig ? matchingSig.id : undefined)
           };
         }
 
@@ -316,7 +376,7 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
 
       return prev;
     });
-  }, [signals]);
+  }, [signals, watchlist]);
 
   const handleRestoreCapital = () => {
     setCapital(500000);
@@ -325,6 +385,15 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
       localStorage.setItem('libra_mock_restoration_count', next.toString());
       return next;
     });
+    if (user) {
+      updateSheetData('logs', 'ADD', {
+        timestamp: new Date().toISOString(),
+        user: user.name,
+        action: 'PAPER_TRADE_RESTORE',
+        details: `[Phone: ${user.phoneNumber}] Reset simulated capital back to ₹5,00,000.`,
+        type: 'TRADE'
+      });
+    }
   };
 
   const handleSquareOffPosition = (id: string, customExitPrice?: number) => {
@@ -335,6 +404,16 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
       const qty = pos.lots * pos.lotSize;
       const pnlPoints = pos.action === 'BUY' ? (finalExitPrice - pos.entryPrice) : (pos.entryPrice - finalExitPrice);
       const finalPnl = Math.round(pnlPoints * qty * 100) / 100;
+
+      if (user) {
+        updateSheetData('logs', 'ADD', {
+          timestamp: new Date().toISOString(),
+          user: user.name,
+          action: 'PAPER_TRADE_CLOSE',
+          details: `[Phone: ${user.phoneNumber}] Closed manually: ${pos.action} ${pos.instrument} ${pos.strike} ${pos.optionType} (Qty: ${qty}) P&L: ₹${finalPnl}`,
+          type: 'TRADE'
+        });
+      }
 
       return {
         ...pos,
@@ -359,6 +438,16 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
     localStorage.removeItem(STORAGE_KEYS.INITIAL_CAPITAL);
     localStorage.removeItem('libra_mock_restoration_count');
     setShowEraseConfirm(false);
+
+    if (user) {
+      updateSheetData('logs', 'ADD', {
+        timestamp: new Date().toISOString(),
+        user: user.name,
+        action: 'PAPER_TRADE_RESET',
+        details: `[Phone: ${user.phoneNumber}] Reset practice paper journal and cleared capital.`,
+        type: 'TRADE'
+      });
+    }
   };
 
   // Helper formats
@@ -795,10 +884,10 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                               {pos.action}
                             </span>
                             <span className="bg-slate-900 border border-slate-800 text-slate-300 font-mono text-[9px] px-1.5 py-0.5 rounded font-bold">
-                              {pos.lots} lots ({qty} qty)
+                              {pos.optionType === 'EQ' ? `${qty} shares` : `${pos.lots} lots (${qty} qty)`}
                             </span>
                             <span className="text-xs font-black text-white uppercase tracking-tight">
-                              {pos.instrument} {pos.strike} {pos.optionType}
+                              {pos.optionType === 'EQ' ? `${pos.instrument} (EQUITY)` : `${pos.instrument} ${pos.strike} ${pos.optionType}`}
                             </span>
                             <span className="text-[7px] font-mono text-slate-600">ID: {pos.id}</span>
                           </div>
@@ -806,7 +895,7 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                           <div className="flex items-center space-x-3 mt-1.5 text-[10px] text-slate-400 font-medium">
                             <div className="flex items-center flex-wrap gap-1.5">
                               <span className="text-slate-500 font-mono text-[8px] bg-slate-900 px-1 py-0.5 rounded">
-                                Size: {pos.lotSize}/lot
+                                {pos.optionType === 'EQ' ? 'Type: Equity Share' : `Size: ${pos.lotSize}/lot`}
                               </span>
                               <Clock size={11} className="text-slate-600" />
                               <span>{new Date(pos.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
@@ -1061,7 +1150,9 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                     <tr key={pos.id} className="hover:bg-slate-950/40 transition-colors text-slate-300 text-xs font-medium">
                       <td className="py-3.5 px-4 font-heavy text-white">
                         <div className="flex flex-col">
-                          <span className="font-bold">{pos.instrument} {pos.strike} {pos.optionType}</span>
+                          <span className="font-bold">
+                            {pos.optionType === 'EQ' ? `${pos.instrument} (EQUITY)` : `${pos.instrument} ${pos.strike} ${pos.optionType}`}
+                          </span>
                           <span className="text-[8px] text-slate-500 font-medium font-mono uppercase mt-0.5">
                             Entered {new Date(pos.timestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} {new Date(pos.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                           </span>
@@ -1073,7 +1164,7 @@ const OptionsJournal: React.FC<OptionsJournalProps> = ({ signals = [] }) => {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-400">
-                        {pos.lots} lots ({pos.lots * pos.lotSize} qty)
+                        {pos.optionType === 'EQ' ? `${pos.lots * pos.lotSize} shares` : `${pos.lots} lots (${pos.lots * pos.lotSize} qty)`}
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold">₹{pos.entryPrice}</td>
                       <td className="py-3.5 px-4 font-mono font-bold">₹{pos.exitPrice || pos.cmp}</td>
