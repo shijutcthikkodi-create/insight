@@ -46,13 +46,29 @@ const WhatsAppLogo = ({ size = 24 }: { size?: number }) => (
   </svg>
 );
 
+const isSameCalendarDay = (timestamp1: number, timestamp2: number) => {
+  const d1 = new Date(timestamp1);
+  const d2 = new Date(timestamp2);
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  );
+};
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem(SESSION_KEY);
     if (saved) {
       try {
-        const { user, timestamp } = JSON.parse(saved);
-        if (Date.now() - timestamp < SESSION_DURATION_MS) return user;
+        const { user: savedUser, timestamp } = JSON.parse(saved);
+        const isExpired = Date.now() - timestamp >= SESSION_DURATION_MS;
+        const differentDay = !isSameCalendarDay(timestamp, Date.now());
+        if (!isExpired && !differentDay) {
+          return savedUser;
+        } else {
+          localStorage.removeItem(SESSION_KEY);
+        }
       } catch (e) { 
         localStorage.removeItem(SESSION_KEY); 
       }
@@ -575,6 +591,26 @@ const App: React.FC = () => {
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
+
+      // End of day logout security check
+      const saved = localStorage.getItem(SESSION_KEY);
+      if (saved) {
+        try {
+          const { timestamp } = JSON.parse(saved);
+          const differentDay = timestamp && !isSameCalendarDay(timestamp, now);
+          const isExpired = timestamp && (now - timestamp >= SESSION_DURATION_MS);
+          if (differentDay || isExpired) {
+            localStorage.removeItem(SESSION_KEY);
+            localStorage.removeItem(DISCLOSURE_KEY);
+            sessionStorage.removeItem(SESSION_ACK_KEY);
+            setUser(null);
+            setDisclosureAccepted(false);
+            setSessionAcknowledged(false);
+            return;
+          }
+        } catch (e) {}
+      }
+
       setActiveMajorAlerts(prev => {
         const next = { ...prev };
         let majorChanged = false;
