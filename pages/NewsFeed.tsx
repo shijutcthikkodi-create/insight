@@ -138,32 +138,20 @@ export const NewsFeed: React.FC<{
   const [simInterval, setSimInterval] = useState<number>(45000); // Live terminal simulation gap/interval in ms (45 seconds default)
 
   // Custom states for Admin-posted, Edited and Deleted news
-  const [customNews, setCustomNews] = useState<NewsItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('libra_custom_news');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [customNews, setCustomNews] = useState<NewsItem[]>([]);
+  const [editedNews, setEditedNews] = useState<Record<string, NewsItem>>({});
+  const [deletedNewsIds, setDeletedNewsIds] = useState<Set<string>>(new Set());
 
-  const [editedNews, setEditedNews] = useState<Record<string, NewsItem>>(() => {
+  // Purge legacy local storage news items on initial mount to clear "users web storage"
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('libra_edited_news');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
+      localStorage.removeItem('libra_custom_news');
+      localStorage.removeItem('libra_edited_news');
+      localStorage.removeItem('libra_deleted_news');
+    } catch (e) {
+      console.warn("Failed to clear news localStorage", e);
     }
-  });
-
-  const [deletedNewsIds, setDeletedNewsIds] = useState<Set<string>>(() => {
-    try {
-      const saved = localStorage.getItem('libra_deleted_news');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
+  }, []);
 
   // Dynamically parse news elements published over Google Sheets messages
   const parsedSheetNews = useMemo(() => {
@@ -465,13 +453,6 @@ export const NewsFeed: React.FC<{
           const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
 
           if (parsedDomestic.length > 0) {
-            const newestItem = parsedDomestic[0];
-            const prevDom = domesticNewsRef.current;
-            const isAlreadyPresent = prevDom.some(it => it.title.toLowerCase() === newestItem.title.toLowerCase() || it.id === newestItem.id);
-            if (!isAlreadyPresent && prevDom.length > 0 && !prevDom[0].id.startsWith("dom-seed")) {
-              triggerNewsAlert?.(newestItem);
-            }
-
             setDomesticNews(prev => {
               const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
               // Filter out the old static offline seed placeholders and identical titles
@@ -481,13 +462,6 @@ export const NewsFeed: React.FC<{
           }
           
           if (parsedGlobal.length > 0) {
-            const newestItem = parsedGlobal[0];
-            const prevGlob = globalNewsRef.current;
-            const isAlreadyPresent = prevGlob.some(it => it.title.toLowerCase() === newestItem.title.toLowerCase() || it.id === newestItem.id);
-            if (!isAlreadyPresent && prevGlob.length > 0 && !prevGlob[0].id.startsWith("glob-seed")) {
-              triggerNewsAlert?.(newestItem);
-            }
-
             setGlobalNews(prev => {
               const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
               // Filter out the old static offline seed placeholders and identical titles
@@ -563,7 +537,6 @@ export const NewsFeed: React.FC<{
         
         const chosen = simAlerts[Math.floor(Math.random() * simAlerts.length)];
         setDomesticNews(prev => [chosen, ...prev].slice(0, 30));
-        triggerNewsAlert?.(chosen);
       } else {
         const simAlerts: NewsItem[] = [
           {
@@ -589,7 +562,6 @@ export const NewsFeed: React.FC<{
 
         const chosen = simAlerts[Math.floor(Math.random() * simAlerts.length)];
         setGlobalNews(prev => [chosen, ...prev].slice(0, 30));
-        triggerNewsAlert?.(chosen);
       }
 
     }, simInterval); // Push standard dynamic alerts at the user-adjusted interval
