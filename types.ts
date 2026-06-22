@@ -155,3 +155,15 @@ export interface PnLStats {
   estimatedPnL: number;
   accuracy: number;
 }
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  link: string;
+  pubDate: string;
+  source: string;
+  description: string;
+  sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'MACRO';
+  isBreaking?: boolean;
+}
+

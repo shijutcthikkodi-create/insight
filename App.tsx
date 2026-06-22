@@ -11,9 +11,9 @@ import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
 import { NewsFeed } from './pages/NewsFeed';
 import OptionsJournal from './pages/OptionJournal';
-import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization } from './types';
+import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization, NewsItem } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
-import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw, Newspaper } from 'lucide-react';
+import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw, Newspaper, X } from 'lucide-react';
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; 
 const SESSION_KEY = 'libra_user_session';
@@ -103,13 +103,32 @@ const App: React.FC = () => {
   
   const [activeMajorAlerts, setActiveMajorAlerts] = useState<Record<string, number>>({});
   const [activeWatchlistAlerts, setActiveWatchlistAlerts] = useState<Record<string, number>>({});
+  const [activeNewsAlerts, setActiveNewsAlerts] = useState<Record<string, { item: NewsItem; expireAt: number }>>({});
   const [activeIntelAlert, setActiveIntelAlert] = useState<number>(0);
   const [granularHighlights, setGranularHighlights] = useState<GranularHighlights>({});
+  const [selectedNewsItem, setSelectedNewsItem] = useState<NewsItem | null>(null);
+  const [unreadNewsCount, setUnreadNewsCount] = useState<number>(() => {
+    const saved = localStorage.getItem('libra_unread_news_count');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // Persistent save for unread items
+  useEffect(() => {
+    localStorage.setItem('libra_unread_news_count', String(unreadNewsCount));
+  }, [unreadNewsCount]);
+
+  // Automatically clear notification totals when visiting news wire tab
+  useEffect(() => {
+    if (page === 'news') {
+      setUnreadNewsCount(0);
+    }
+  }, [page]);
   
   const prevSignalsRef = useRef<TradeSignal[]>([]);
   const prevWatchlistRef = useRef<WatchlistItem[]>([]);
   const prevMessagesRef = useRef<ChatMessage[]>([]);
   const lastIntelIdRef = useRef<string | null>(null);
+  const seenNewsIdsRef = useRef<Set<string>>(new Set());
 
   const deadSignalsRef = useRef<Map<string, TradeSignal>>(new Map());
   const deadInsightsRef = useRef<Set<string>>(new Set());
@@ -280,6 +299,18 @@ const App: React.FC = () => {
       playTone(1800, 0.06, 0.12);
     } catch (e) {}
   }, [soundEnabled, audioInitialized]);
+
+  const triggerNewsAlert = useCallback((item: NewsItem) => {
+    const expireTime = Date.now() + 10000; // Increased to 10 seconds for user read comfort
+    setActiveNewsAlerts(prev => ({
+      ...prev,
+      [item.id]: { item, expireAt: expireTime }
+    }));
+    playUpdateBlip();
+    if (pageRef.current !== 'news') {
+      setUnreadNewsCount(prev => prev + 1);
+    }
+  }, [playUpdateBlip]);
 
   const playIntelAlert = useCallback(() => {
     if (!soundEnabled || !audioInitialized) return;
@@ -563,6 +594,83 @@ const App: React.FC = () => {
         setUsers([...data.users]);
         setLogs([...(data.logs || [])]);
         setMessages([...(data.messages || [])]);
+
+        // Check for new custom posted news inside GSheets messages
+        if (!isInitial && data.messages) {
+          const newsMessages = [...data.messages]
+            .filter(m => m.text.includes('LIBRA_NEWS_V1:'))
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+          const safeParseJson = (str: string): any => {
+            try {
+              let cleaned = str.trim();
+              cleaned = cleaned.replace(/&quot;/g, '"');
+              cleaned = cleaned.replace(/\\"/g, '"');
+              cleaned = cleaned.replace(/""/g, '"');
+              if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+                cleaned = cleaned.substring(1, cleaned.length - 1);
+              }
+              return JSON.parse(cleaned);
+            } catch (e) {
+              try {
+                return JSON.parse(str);
+              } catch (_) {
+                throw e;
+              }
+            }
+          };
+
+          newsMessages.forEach(m => {
+            try {
+              const text = m.text.trim();
+              const startIdx = text.indexOf('LIBRA_NEWS_V1:');
+              if (startIdx === -1) return;
+              const subStr = text.substring(startIdx);
+              const parts = subStr.split('LIBRA_NEWS_V1:');
+              if (parts.length < 2) return;
+              const rest = parts[1];
+
+              if (rest.startsWith('ADD:')) {
+                const itemJson = rest.substring(4);
+                const item = safeParseJson(itemJson) as NewsItem;
+                if (item && item.id && !seenNewsIdsRef.current.has(item.id)) {
+                  seenNewsIdsRef.current.add(item.id);
+                  triggerNewsAlert(item);
+                }
+              }
+            } catch (err) {
+              console.warn("Recoverable: Failed to parse sheet news message for overlay in sync:", err);
+            }
+          });
+        }
+
+        // Initialize seen news IDs on initial sync so they don't trigger alerts
+        if (isInitial && data.messages) {
+          const newsMessages = [...data.messages].filter(m => m.text.includes('LIBRA_NEWS_V1:'));
+          newsMessages.forEach(m => {
+            try {
+              const text = m.text.trim();
+              const parts = text.split('LIBRA_NEWS_V1:');
+              if (parts.length < 2) return;
+              const rest = parts[1];
+              if (rest.startsWith('ADD:')) {
+                const itemJson = rest.substring(4);
+                let cleaned = itemJson.trim().replace(/&quot;/g, '"').replace(/\\"/g, '"').replace(/""/g, '"');
+                if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.substring(1, cleaned.length - 1);
+                let item;
+                try {
+                  item = JSON.parse(cleaned);
+                } catch {
+                  item = JSON.parse(itemJson);
+                }
+                if (item && item.id) {
+                  seenNewsIdsRef.current.add(item.id);
+                }
+              }
+            } catch (e) {}
+          });
+        }
+
         setMonthlyRealization([...(data.monthlyRealization || [])]);
         setInsights(reconciledInsights);
         setConnectionStatus('connected');
@@ -629,6 +737,12 @@ const App: React.FC = () => {
         const next = { ...prev };
         let changed = false;
         Object.keys(next).forEach(key => { if (now >= next[key]) { delete next[key]; changed = true; } });
+        return changed ? next : prev;
+      });
+      setActiveNewsAlerts(prev => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(key => { if (now >= next[key].expireAt) { delete next[key]; changed = true; } });
         return changed ? next : prev;
       });
       setActiveIntelAlert(prev => (now >= prev ? 0 : prev));
@@ -772,6 +886,9 @@ const App: React.FC = () => {
       onNavigate={setPage}
       watchlist={watchlist}
       activeWatchlistAlerts={activeWatchlistAlerts}
+      activeNewsAlerts={activeNewsAlerts}
+      unreadNewsCount={unreadNewsCount}
+      onNewsClick={setSelectedNewsItem}
     >
       {user && !audioInitialized && (
         <div className="fixed inset-0 z-[200] bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
@@ -842,7 +959,7 @@ const App: React.FC = () => {
       </a>
 
       {page === 'dashboard' && <Dashboard watchlist={watchlist} signals={signals} messages={messages} user={user} granularHighlights={granularHighlights} activeMajorAlerts={activeMajorAlerts} activeWatchlistAlerts={activeWatchlistAlerts} activeIntelAlert={activeIntelAlert} onSignalUpdate={handleSignalUpdate} />}
-      {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} messages={messages} />}
+      {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} messages={messages} triggerNewsAlert={triggerNewsAlert} onNewsClick={setSelectedNewsItem} />}
       {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} user={user} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
       {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}
@@ -877,6 +994,81 @@ const App: React.FC = () => {
           <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Sandbox</span>
         </button>
       </div>
+
+      {/* GLOBAL DETAILED FINANCIAL UPDATE MODAL */}
+      {selectedNewsItem && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-200">
+            {/* Accent line matching sentiment */}
+            <div className={`h-1.5 w-full ${
+              selectedNewsItem.sentiment === 'BULLISH' ? 'bg-emerald-500' :
+              selectedNewsItem.sentiment === 'BEARISH' ? 'bg-rose-500' :
+              selectedNewsItem.sentiment === 'MACRO' ? 'bg-amber-500' : 'bg-blue-500'
+            }`} />
+            
+            <button 
+              onClick={() => setSelectedNewsItem(null)}
+              className="absolute top-4 right-4 p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors active:scale-95 cursor-pointer z-10"
+              title="Close window"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="p-6 space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase ${
+                  selectedNewsItem.sentiment === 'BULLISH' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' :
+                  selectedNewsItem.sentiment === 'BEARISH' ? 'bg-rose-950 text-rose-400 border border-rose-500/25' :
+                  selectedNewsItem.sentiment === 'MACRO' ? 'bg-amber-950 text-amber-400 border border-amber-500/25' :
+                  'bg-blue-950 text-blue-400 border border-blue-500/25'
+                }`}>
+                  {selectedNewsItem.sentiment}
+                </span>
+                
+                <span className="text-[10px] font-black text-blue-400 font-mono tracking-tight uppercase">
+                  {selectedNewsItem.source}
+                </span>
+
+                <span className="text-[9px] font-mono text-slate-500 text-right shrink-0">
+                  {new Date(selectedNewsItem.pubDate).toLocaleString()}
+                </span>
+              </div>
+
+              <h2 className="text-white text-base md:text-lg font-black uppercase tracking-tight leading-snug">
+                {selectedNewsItem.title}
+              </h2>
+
+              <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1 text-justify no-scrollbar">
+                {selectedNewsItem.description.split('\n\n').map((para, i) => (
+                  <p key={i} className="text-slate-300 text-xs font-semibold leading-relaxed tracking-wide">
+                    {para}
+                  </p>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3 pt-4 border-t border-slate-800/60">
+                {selectedNewsItem.link && (
+                  <a 
+                    href={selectedNewsItem.link} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 cursor-pointer no-underline"
+                  >
+                    <span>View Coverage</span>
+                    <ExternalLink size={12} />
+                  </a>
+                )}
+                <button 
+                  onClick={() => setSelectedNewsItem(null)}
+                  className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

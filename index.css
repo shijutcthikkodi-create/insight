@@ -9,7 +9,7 @@
   --animate-box-glow: box-glow 0.8s ease-in-out infinite;
   --animate-box-blink: box-blink 0.4s ease-in-out infinite;
   --animate-card-pulse: card-pulse 1.2s ease-in-out infinite;
-  --animate-notification: notification-slide 5s ease-in-out forwards;
+  --animate-notification: notification-slide 10s ease-in-out forwards;
   --animate-target-success: target-hit-success 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   --animate-success-shimmer: success-shimmer 2s linear infinite;
   --animate-fire-blast: fire-blast-double 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;

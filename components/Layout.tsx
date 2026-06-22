@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Logo from './Logo';
 import { Menu, X, BarChart2, Radio, ShieldAlert, LogOut, FileText, User as UserIcon, Scale, Clock, CheckCircle, AlertCircle, EyeOff, ShieldCheck, List, TrendingUp, TrendingDown, BellRing, Zap, ArrowUpCircle, ExternalLink, Briefcase, BookOpen, Info, Flame, Newspaper } from 'lucide-react';
-import { User, WatchlistItem } from '../types';
+import { User, WatchlistItem, NewsItem } from '../types';
 import { FOOTER_TEXT, BRANDING_TEXT } from '../constants';
 
 interface LayoutProps {
@@ -12,6 +12,9 @@ interface LayoutProps {
   onNavigate: (page: string) => void;
   watchlist?: WatchlistItem[];
   activeWatchlistAlerts?: Record<string, number>;
+  activeNewsAlerts?: Record<string, { item: NewsItem; expireAt: number }>;
+  unreadNewsCount?: number;
+  onNewsClick?: (item: NewsItem) => void;
 }
 
 const GlobalWatchlist = ({ watchlist = [], activeWatchlistAlerts = {} }: { watchlist: WatchlistItem[], activeWatchlistAlerts: Record<string, number> }) => {
@@ -93,6 +96,59 @@ const WatchlistAlertToast = ({ activeWatchlistAlerts = {}, watchlist = [] }: { a
   );
 };
 
+const NewsAlertToast = ({ 
+  activeNewsAlerts = {}, 
+  onAlertClick 
+}: { 
+  activeNewsAlerts: Record<string, { item: NewsItem; expireAt: number }>;
+  onAlertClick?: (item: NewsItem) => void;
+}) => {
+  const alertedIds = Object.keys(activeNewsAlerts);
+
+  if (alertedIds.length === 0) return null;
+
+  return (
+    <div className="fixed top-32 left-1/2 -translate-x-1/2 z-[300] flex flex-col items-center space-y-1.5 pointer-events-none w-full max-w-[280px] px-2 animate-in fade-in slide-in-from-top-4 duration-300">
+      {alertedIds.map(id => {
+        const { item } = activeNewsAlerts[id];
+        return (
+          <div 
+            key={id} 
+            onClick={() => onAlertClick?.(item)}
+            className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-[0_8px_25px_rgba(0,0,0,0.5)] border border-slate-700/55 px-3 py-2 flex items-center justify-between w-full animate-notification relative overflow-hidden pointer-events-auto cursor-pointer hover:border-slate-500/20 active:scale-[0.98] transition-all"
+            title="Read Complete Financial Update"
+          >
+            <div className={`absolute top-0 left-0 bottom-0 w-1 ${
+              item.sentiment === 'BULLISH' ? 'bg-emerald-500' :
+              item.sentiment === 'BEARISH' ? 'bg-rose-500' :
+              item.sentiment === 'MACRO' ? 'bg-amber-500' : 'bg-blue-500'
+            }`} />
+            <div className="flex items-center space-x-2 pl-1.5 min-w-0 flex-1">
+              <div className="p-1 bg-slate-800 rounded-md text-blue-400 shrink-0">
+                <Newspaper size={14} />
+              </div>
+              <div className="flex flex-col min-w-0 pr-1">
+                <span className="text-[7px] font-black uppercase tracking-tight text-slate-400 truncate">Wire: {item.source}</span>
+                <span className="text-[9px] font-bold text-slate-100 line-clamp-2 leading-tight uppercase tracking-tight">{item.title}</span>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <span className={`px-1 py-0.5 rounded text-[6px] font-mono font-black tracking-widest ${
+                item.sentiment === 'BULLISH' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/25' :
+                item.sentiment === 'BEARISH' ? 'bg-rose-950 text-rose-400 border border-rose-500/25' :
+                item.sentiment === 'MACRO' ? 'bg-amber-950 text-amber-400 border border-amber-500/25' :
+                'bg-blue-950 text-blue-400 border border-blue-500/25'
+              }`}>
+                {item.sentiment}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const Watermark = ({ user }: { user: User }) => {
   const watermarkText = useMemo(() => {
     const safeId = (user.id || '').toUpperCase();
@@ -130,7 +186,18 @@ const Watermark = ({ user }: { user: User }) => {
   );
 };
 
-const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, onNavigate, watchlist = [], activeWatchlistAlerts = {} }) => {
+const Layout: React.FC<LayoutProps> = ({ 
+  children, 
+  user, 
+  onLogout, 
+  currentPage, 
+  onNavigate, 
+  watchlist = [], 
+  activeWatchlistAlerts = {}, 
+  activeNewsAlerts = {},
+  unreadNewsCount = 0,
+  onNewsClick
+}) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState<{ days: number, hours: number, minutes: number, seconds: number, expired: boolean, soon: boolean, perpetual: boolean } | null>(null);
 
@@ -163,20 +230,28 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, 
 
   const hasGlobalWatchAlerts = Object.keys(activeWatchlistAlerts).length > 0;
 
-  const NavItem = ({ page, icon: Icon, label, isNew }: { page: string; icon: any; label: string; isNew?: boolean }) => (
-    <button
-      onClick={() => { onNavigate(page); setIsSidebarOpen(false); }}
-      className={`flex items-center w-full px-4 py-3 mb-2 rounded-lg transition-colors relative group ${
-        currentPage === page ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-      }`}
-    >
-      <Icon size={20} className="mr-3 shrink-0" />
-      <span className="font-medium whitespace-nowrap">{label}</span>
-      {isNew && (
-        <span className="ml-auto px-1.5 py-0.5 rounded bg-rose-500 text-[8px] font-black text-white uppercase animate-pulse">New</span>
-      )}
-    </button>
-  );
+  const NavItem = ({ page, icon: Icon, label, isNew }: { page: string; icon: any; label: string; isNew?: boolean }) => {
+    const hasUnread = page === 'news' && unreadNewsCount > 0;
+    return (
+      <button
+        onClick={() => { onNavigate(page); setIsSidebarOpen(false); }}
+        className={`flex items-center w-full px-4 py-3 mb-2 rounded-lg transition-colors relative group ${
+          currentPage === page ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+        }`}
+      >
+        <Icon size={20} className="mr-3 shrink-0" />
+        <span className="font-medium whitespace-nowrap">{label}</span>
+        {hasUnread ? (
+          <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-[9px] font-black text-white animate-pulse gap-1">
+            <BellRing size={8} />
+            <span>{unreadNewsCount}</span>
+          </span>
+        ) : isNew ? (
+          <span className="ml-auto px-1.5 py-0.5 rounded bg-blue-600/20 text-[8px] font-black text-blue-400 border border-blue-500/20 uppercase">New</span>
+        ) : null}
+      </button>
+    );
+  };
 
   const formatUnit = (n: number) => n.toString().padStart(2, '0');
 
@@ -203,6 +278,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, 
 
       {/* GLOBAL TOAST NOTIFICATIONS */}
       <WatchlistAlertToast activeWatchlistAlerts={activeWatchlistAlerts} watchlist={watchlist} />
+      <NewsAlertToast activeNewsAlerts={activeNewsAlerts} onAlertClick={onNewsClick} />
 
       {/* Global Market Watch Update Alert Bar */}
       {hasGlobalWatchAlerts && (
@@ -219,10 +295,26 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, 
               </div>
             </div>
         </div>
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-slate-800 rounded-lg text-slate-300 relative active:scale-95 transition-transform">
-          {hasGlobalWatchAlerts && <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-ping z-10"></span>}
-          {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
+        <div className="flex items-center space-x-2">
+          {/* Bell Icon with Unread Count */}
+          <button 
+            onClick={() => onNavigate('news')}
+            className="p-2 bg-slate-800 rounded-lg text-slate-300 relative active:scale-95 transition-transform cursor-pointer"
+            title="Read Live Financial News updates"
+          >
+            <BellRing size={16} className={unreadNewsCount > 0 ? "text-amber-400 animate-bounce" : "text-slate-400"} />
+            {unreadNewsCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-0.5 items-center justify-center bg-rose-600 text-[8px] font-black text-white rounded-full border border-slate-900">
+                {unreadNewsCount}
+              </span>
+            )}
+          </button>
+
+          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-slate-800 rounded-lg text-slate-300 relative active:scale-95 transition-transform cursor-pointer">
+            {hasGlobalWatchAlerts && <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full animate-ping z-10"></span>}
+            {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
       </div>
 
       {/* Sidebar Overlay for Mobile */}
@@ -234,8 +326,20 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentPage, 
       )}
 
       <aside className={`fixed md:relative z-40 top-0 left-0 h-full w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} flex flex-col shadow-2xl flex-shrink-0`}>
-        <div className="p-6 hidden md:flex items-center space-x-3 mb-6">
+        <div className="p-6 hidden md:flex items-center justify-between mb-6">
           <Logo size="lg" />
+          <button 
+            onClick={() => onNavigate('news')}
+            className="p-2 bg-slate-800 hover:bg-slate-750 rounded-lg text-slate-300 relative active:scale-95 transition-all cursor-pointer"
+            title={`${unreadNewsCount} Unread News Updates`}
+          >
+            <BellRing size={16} className={unreadNewsCount > 0 ? "text-amber-400 animate-pulse" : "text-slate-400"} />
+            {unreadNewsCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] px-0.5 items-center justify-center bg-rose-600 text-[8px] font-black text-white rounded-full border border-slate-900 animate-pulse">
+                {unreadNewsCount}
+              </span>
+            )}
+          </button>
         </div>
         
         {/* Mobile Sidebar Close Button */}

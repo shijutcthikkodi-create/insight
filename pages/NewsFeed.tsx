@@ -1,25 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Newspaper, Globe, MapPin, Search, RefreshCw, ExternalLink, Clock, Sparkles, TrendingUp, TrendingDown, Flame, AlertCircle, Volume2, ShieldCheck, Sliders, Zap, Plus, Trash2, Edit3, RotateCcw, X, Check } from 'lucide-react';
-import { User, ChatMessage } from '../types';
+import { User, ChatMessage, NewsItem } from '../types';
 import { updateSheetData } from '../services/googleSheetsService';
-
-interface NewsItem {
-  id: string;
-  title: string;
-  link: string;
-  pubDate: string;
-  source: string;
-  description: string;
-  sentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'MACRO';
-  isBreaking?: boolean;
-}
 
 // Rich Initial Domestic Seed Data (Indian Markets)
 const DOMESTIC_SEED: NewsItem[] = [
   {
     id: "dom-seed-1",
     title: "Nifty 50 Approaches Key Resistance at 23,200; Options OI Shows Heavy Put Writing at 23,000",
-    link: "https://economictimes.indiatimes.com/markets",
+    link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
     pubDate: new Date(Date.now() - 4 * 60000).toISOString(),
     source: "Economic Times",
     description: "Options open interest (OI) distribution indicates a robust, reliable base forming near the 23,000 strikes. Multiple institutional desks report large-scale put additions, demonstrating confidence in strong immediate support.\n\nSimultaneously, key technical oscillators highlight a bullish momentum pattern. Quant research desks anticipate a rapid test of the 23,250 level if buy flows persist over early sessions.",
@@ -47,7 +36,7 @@ const DOMESTIC_SEED: NewsItem[] = [
   {
     id: "dom-seed-4",
     title: "RBI Holds Repo Rate Steady at 6.50%; Signals Vigilant Stance on Aligning Domestic CPI Core Inflation",
-    link: "https://economictimes.indiatimes.com",
+    link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
     pubDate: new Date(Date.now() - 120 * 60000).toISOString(),
     source: "RBI Policy Desk",
     description: "The Monetary Policy Committee voted with a 5-to-1 majority to remain focused on the withdrawal of accommodation stance. The governor emphasized that aligning retail CPI inflation to the 4% target remains the primary objective.\n\nReflecting robust consumption trends, domestic economic growth forecasts were revised upward. Analysts note this provides the apex bank adequate headroom to delay rate reductions.",
@@ -56,7 +45,7 @@ const DOMESTIC_SEED: NewsItem[] = [
   {
     id: "dom-seed-5",
     title: "Tata Steel Logistics Under Pressure as Global Premium Hard Coking Coal Spot Rates Touch New Highs",
-    link: "https://economictimes.indiatimes.com/markets",
+    link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
     pubDate: new Date(Date.now() - 180 * 60000).toISOString(),
     source: "Bloomberg Quint",
     description: "Delays in major Australian shipping corridors triggered acute spot supplies constraints. Premium hard coking coal prices on free-on-board criteria escalated to unprecedented high values.\n\nRaw material margins compression is likely for primary domestic manufacturers. Industrial experts warns of down-trending profitability unless domestic finished steel prices are revised upward.",
@@ -121,9 +110,26 @@ const PROXIES = [
   "https://api.allorigins.win/get?url="
 ];
 
-export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; messages?: ChatMessage[] }> = ({ user, soundFn, messages = [] }) => {
+export const NewsFeed: React.FC<{ 
+  user?: User | null; 
+  soundFn?: () => void; 
+  messages?: ChatMessage[]; 
+  triggerNewsAlert?: (item: NewsItem) => void;
+  onNewsClick?: (item: NewsItem) => void;
+}> = ({ user, soundFn, messages = [], triggerNewsAlert, onNewsClick }) => {
   const [domesticNews, setDomesticNews] = useState<NewsItem[]>(DOMESTIC_SEED);
   const [globalNews, setGlobalNews] = useState<NewsItem[]>(GLOBAL_SEED);
+
+  const domesticNewsRef = useRef<NewsItem[]>(DOMESTIC_SEED);
+  const globalNewsRef = useRef<NewsItem[]>(GLOBAL_SEED);
+
+  useEffect(() => {
+    domesticNewsRef.current = domesticNews;
+  }, [domesticNews]);
+
+  useEffect(() => {
+    globalNewsRef.current = globalNews;
+  }, [globalNews]);
   const [activeSegment, setActiveSegment] = useState<'DOMESTIC' | 'GLOBAL'>('DOMESTIC');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -166,14 +172,22 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
     const sheetDeleted = new Set<string>();
 
     const safeParseJson = (str: string): any => {
-      let cleaned = str.trim();
-      cleaned = cleaned.replace(/&quot;/g, '"');
-      cleaned = cleaned.replace(/\\"/g, '"');
-      cleaned = cleaned.replace(/""/g, '"');
-      if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
-        cleaned = cleaned.substring(1, cleaned.length - 1);
+      try {
+        let cleaned = str.trim();
+        cleaned = cleaned.replace(/&quot;/g, '"');
+        cleaned = cleaned.replace(/\\"/g, '"');
+        cleaned = cleaned.replace(/""/g, '"');
+        if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+          cleaned = cleaned.substring(1, cleaned.length - 1);
+        }
+        return JSON.parse(cleaned);
+      } catch (e) {
+        try {
+          return JSON.parse(str);
+        } catch (_) {
+          throw e;
+        }
       }
-      return JSON.parse(cleaned);
     };
 
     const newsMessages = [...messages]
@@ -193,16 +207,18 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
         if (rest.startsWith('ADD:')) {
           const itemJson = rest.substring(4);
           const item = safeParseJson(itemJson) as NewsItem;
-          if (!sheetCustom.some(it => it.id === item.id)) {
+          if (item && item.id && !sheetCustom.some(it => it.id === item.id)) {
             sheetCustom.unshift(item);
           }
         } else if (rest.startsWith('UPDATE_NEWS:')) {
           const itemJson = rest.substring(12);
           const item = safeParseJson(itemJson) as NewsItem;
-          sheetEdited[item.id] = item;
-          const idx = sheetCustom.findIndex(it => it.id === item.id);
-          if (idx !== -1) {
-            sheetCustom[idx] = item;
+          if (item && item.id) {
+            sheetEdited[item.id] = item;
+            const idx = sheetCustom.findIndex(it => it.id === item.id);
+            if (idx !== -1) {
+              sheetCustom[idx] = item;
+            }
           }
         } else if (rest.startsWith('DELETE:')) {
           const itemId = rest.substring(7).trim();
@@ -216,7 +232,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
           delete sheetEdited[itemId];
         }
       } catch (err) {
-        console.error("Failed to parse sheet news message:", err);
+        console.warn("Recoverable: Failed to parse sheet news message:", err);
       }
     });
 
@@ -268,7 +284,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
         {
           id: randomSeedId,
           title: `[MANUAL ALIGN] F&O Volumes Spike on Nifty ATM Calls in options chain`,
-          link: "https://economictimes.indiatimes.com/markets",
+          link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
           pubDate: nowTimes,
           source: "Terminal Intelligence",
           description: "Options traders block trade over 115,000 contracts of Nifty CE contracts near the current swing high. This surge in ATM call open interest indicates active bullish leverage setups participating in midday buy trades.\n\nSimultaneously, multi-exchange trend monitors demonstrate extreme long-buildup configurations. Capital floor parameters remain solid as institutional writers adjust short-strike protections.",
@@ -449,6 +465,13 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
           const parsedGlobal = parseGoogleNewsRSS(globXml, 'glob');
 
           if (parsedDomestic.length > 0) {
+            const newestItem = parsedDomestic[0];
+            const prevDom = domesticNewsRef.current;
+            const isAlreadyPresent = prevDom.some(it => it.title.toLowerCase() === newestItem.title.toLowerCase() || it.id === newestItem.id);
+            if (!isAlreadyPresent && prevDom.length > 0 && !prevDom[0].id.startsWith("dom-seed")) {
+              triggerNewsAlert?.(newestItem);
+            }
+
             setDomesticNews(prev => {
               const existingTitles = new Set(parsedDomestic.map(it => it.title.toLowerCase()));
               // Filter out the old static offline seed placeholders and identical titles
@@ -458,6 +481,13 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
           }
           
           if (parsedGlobal.length > 0) {
+            const newestItem = parsedGlobal[0];
+            const prevGlob = globalNewsRef.current;
+            const isAlreadyPresent = prevGlob.some(it => it.title.toLowerCase() === newestItem.title.toLowerCase() || it.id === newestItem.id);
+            if (!isAlreadyPresent && prevGlob.length > 0 && !prevGlob[0].id.startsWith("glob-seed")) {
+              triggerNewsAlert?.(newestItem);
+            }
+
             setGlobalNews(prev => {
               const existingTitles = new Set(parsedGlobal.map(it => it.title.toLowerCase()));
               // Filter out the old static offline seed placeholders and identical titles
@@ -504,7 +534,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
           {
             id: randomSeedId,
             title: `[ALERT] F&O Trade Call Volumes Spike heavily on Nifty ATM Calls in ${new Date().toLocaleTimeString()} option chain`,
-            link: "https://economictimes.indiatimes.com/markets",
+            link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
             pubDate: nowTimes,
             source: "Terminal Intelligence",
             description: "Institutional options traders block trade over 85,000 contracts of Nifty 23,100 CE. Momentum oscillator suggested major intraday long-buildup in key indices.\n\nOption desk dealers indicate aggressive call writers are actively hedging positions. This shifts immediate support bands upward to match retail buy-side momentum.",
@@ -533,6 +563,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
         
         const chosen = simAlerts[Math.floor(Math.random() * simAlerts.length)];
         setDomesticNews(prev => [chosen, ...prev].slice(0, 30));
+        triggerNewsAlert?.(chosen);
       } else {
         const simAlerts: NewsItem[] = [
           {
@@ -558,6 +589,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
 
         const chosen = simAlerts[Math.floor(Math.random() * simAlerts.length)];
         setGlobalNews(prev => [chosen, ...prev].slice(0, 30));
+        triggerNewsAlert?.(chosen);
       }
 
     }, simInterval); // Push standard dynamic alerts at the user-adjusted interval
@@ -670,7 +702,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
     setEditingItem(null);
     setFormHeadline('');
     setFormSource('Libra News Desk');
-    setFormLink('https://economictimes.indiatimes.com/markets');
+    setFormLink('https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA');
     setFormDescription('');
     setFormSentiment('NEUTRAL');
     setFormSegment(activeSegment);
@@ -745,7 +777,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
         id: `custom-news-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         title: formHeadline.trim(),
         source: formSource.trim() || 'Libra News Desk',
-        link: formLink.trim() || 'https://economictimes.indiatimes.com/markets',
+        link: formLink.trim() || 'https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA',
         description: formDescription.trim(),
         sentiment: formSentiment,
         isBreaking: formIsBreaking,
@@ -756,6 +788,7 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
       const nextCustom = [newItem, ...customNews];
       setCustomNews(nextCustom);
       localStorage.setItem('libra_custom_news', JSON.stringify(nextCustom));
+      triggerNewsAlert?.(newItem);
 
       // Synchronize dispatch globally via Google Sheets messages database
       updateSheetData('messages', 'ADD', {
@@ -1021,10 +1054,14 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
               return (
                 <div
                   key={news.id}
-                  className={`bg-slate-900/80 border rounded-2xl p-4.5 shadow-xl relative overflow-hidden transition-all duration-300 flex flex-col group/item hover:bg-slate-800/25 ${
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('a')) return;
+                    onNewsClick?.(news);
+                  }}
+                  className={`bg-slate-900/80 border rounded-2xl p-4.5 shadow-xl relative overflow-hidden transition-all duration-300 flex flex-col group/item hover:bg-slate-800/25 cursor-pointer ${
                     news.isBreaking 
-                      ? 'border-red-500/30 bg-red-950/5 ring-1 ring-red-500/10' 
-                      : 'border-slate-800 hover:border-slate-700/60'
+                      ? 'border-red-500/30 bg-red-950/5 ring-1 ring-red-500/10 hover:border-red-500/50' 
+                      : 'border-slate-800 hover:border-blue-500/20'
                   }`}
                 >
                   {/* Breaking News background flare */}
@@ -1077,9 +1114,14 @@ export const NewsFeed: React.FC<{ user?: User | null; soundFn?: () => void; mess
 
                     {/* Sentiment and Admin Tools Footer Action Line */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-800/40 flex-wrap gap-2">
-                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black tracking-widest uppercase ${sentimentBadges[news.sentiment]}`}>
-                        {news.sentiment}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black tracking-widest uppercase ${sentimentBadges[news.sentiment]}`}>
+                          {news.sentiment}
+                        </span>
+                        <span className="text-[7.5px] font-black text-blue-500/80 tracking-widest uppercase opacity-0 group-hover/item:opacity-100 transition-opacity duration-300">
+                          - Click to view complete briefing
+                        </span>
+                      </div>
                       
                       {/* Admin Controls Area */}
                       {user?.isAdmin && (
