@@ -8,7 +8,7 @@ const DOMESTIC_SEED: NewsItem[] = [
   {
     id: "dom-seed-1",
     title: "Nifty 50 Approaches Key Resistance at 23,200; Options OI Shows Heavy Put Writing at 23,000",
-    link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
+    link: "https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY",
     pubDate: new Date(Date.now() - 4 * 60000).toISOString(),
     source: "Economic Times",
     description: "Options open interest (OI) distribution indicates a robust, reliable base forming near the 23,000 strikes. Multiple institutional desks report large-scale put additions, demonstrating confidence in strong immediate support.\n\nSimultaneously, key technical oscillators highlight a bullish momentum pattern. Quant research desks anticipate a rapid test of the 23,250 level if buy flows persist over early sessions.",
@@ -36,7 +36,7 @@ const DOMESTIC_SEED: NewsItem[] = [
   {
     id: "dom-seed-4",
     title: "RBI Holds Repo Rate Steady at 6.50%; Signals Vigilant Stance on Aligning Domestic CPI Core Inflation",
-    link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
+    link: "https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY",
     pubDate: new Date(Date.now() - 120 * 60000).toISOString(),
     source: "RBI Policy Desk",
     description: "The Monetary Policy Committee voted with a 5-to-1 majority to remain focused on the withdrawal of accommodation stance. The governor emphasized that aligning retail CPI inflation to the 4% target remains the primary objective.\n\nReflecting robust consumption trends, domestic economic growth forecasts were revised upward. Analysts note this provides the apex bank adequate headroom to delay rate reductions.",
@@ -45,7 +45,7 @@ const DOMESTIC_SEED: NewsItem[] = [
   {
     id: "dom-seed-5",
     title: "Tata Steel Logistics Under Pressure as Global Premium Hard Coking Coal Spot Rates Touch New Highs",
-    link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
+    link: "https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY",
     pubDate: new Date(Date.now() - 180 * 60000).toISOString(),
     source: "Bloomberg Quint",
     description: "Delays in major Australian shipping corridors triggered acute spot supplies constraints. Premium hard coking coal prices on free-on-board criteria escalated to unprecedented high values.\n\nRaw material margins compression is likely for primary domestic manufacturers. Industrial experts warns of down-trending profitability unless domestic finished steel prices are revised upward.",
@@ -284,7 +284,7 @@ export const NewsFeed: React.FC<{
         {
           id: randomSeedId,
           title: `[MANUAL ALIGN] F&O Volumes Spike on Nifty ATM Calls in options chain`,
-          link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
+          link: "https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY",
           pubDate: nowTimes,
           source: "Terminal Intelligence",
           description: "Options traders block trade over 115,000 contracts of Nifty CE contracts near the current swing high. This surge in ATM call open interest indicates active bullish leverage setups participating in midday buy trades.\n\nSimultaneously, multi-exchange trend monitors demonstrate extreme long-buildup configurations. Capital floor parameters remain solid as institutional writers adjust short-strike protections.",
@@ -534,7 +534,7 @@ export const NewsFeed: React.FC<{
           {
             id: randomSeedId,
             title: `[ALERT] F&O Trade Call Volumes Spike heavily on Nifty ATM Calls in ${new Date().toLocaleTimeString()} option chain`,
-            link: "https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA",
+            link: "https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY",
             pubDate: nowTimes,
             source: "Terminal Intelligence",
             description: "Institutional options traders block trade over 85,000 contracts of Nifty 23,100 CE. Momentum oscillator suggested major intraday long-buildup in key indices.\n\nOption desk dealers indicate aggressive call writers are actively hedging positions. This shifts immediate support bands upward to match retail buy-side momentum.",
@@ -702,7 +702,7 @@ export const NewsFeed: React.FC<{
     setEditingItem(null);
     setFormHeadline('');
     setFormSource('Libra News Desk');
-    setFormLink('https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA');
+    setFormLink('https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY');
     setFormDescription('');
     setFormSentiment('NEUTRAL');
     setFormSegment(activeSegment);
@@ -777,7 +777,7 @@ export const NewsFeed: React.FC<{
         id: `custom-news-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         title: formHeadline.trim(),
         source: formSource.trim() || 'Libra News Desk',
-        link: formLink.trim() || 'https://www.youtube.com/channel/UCogoMif0oDeu8dXLKA82sSA',
+        link: formLink.trim() || 'https://youtube.com/@stockmarketsecrets-malayalam?si=BaL-rSdedZ_QBFbY',
         description: formDescription.trim(),
         sentiment: formSentiment,
         isBreaking: formIsBreaking,
