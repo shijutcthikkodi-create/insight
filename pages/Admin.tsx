@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { TradeSignal, TradeStatus, User, LogEntry, ChatMessage, WatchlistItem } from '../types';
 import { 
   Zap, Loader2, Power, Briefcase, Activity, Moon, ShieldCheck, 
@@ -25,6 +25,61 @@ interface AdminProps {
 
 const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], logs = [], onHardSync }) => {
   const [activeTab, setActiveTab] = useState<'SIGNALS' | 'BROADCAST' | 'USERS' | 'LOGS' | 'WHATSAPP'>('SIGNALS');
+
+  // Refs for auto focus navigation on Enter press
+  const instrumentRef = useRef<HTMLSelectElement>(null);
+  const customStockNameRef = useRef<HTMLInputElement>(null);
+  const symbolRef = useRef<HTMLInputElement>(null);
+  const typeRef = useRef<HTMLInputElement>(null);
+  const entryPriceRef = useRef<HTMLInputElement>(null);
+  const qtyRef = useRef<HTMLInputElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+
+  const handleInstrumentKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sigInstrument === 'STOCKS') {
+        customStockNameRef.current?.focus();
+      } else {
+        symbolRef.current?.focus();
+      }
+    }
+  };
+
+  const handleCustomStockNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      symbolRef.current?.focus();
+    }
+  };
+
+  const handleSymbolKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      typeRef.current?.focus();
+    }
+  };
+
+  const handleTypeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      entryPriceRef.current?.focus();
+    }
+  };
+
+  const handleEntryPriceKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      qtyRef.current?.focus();
+    }
+  };
+
+  const handleQtyKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitRef.current?.focus();
+    }
+  };
   const [isSaving, setIsSaving] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
 
@@ -477,7 +532,7 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                         <div className="grid grid-cols-2 gap-4">
                             <div className="col-span-1">
                                 <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Instrument</label>
-                                <select value={sigInstrument} onChange={e => { setSigInstrument(e.target.value); if (e.target.value !== 'STOCKS') setCustomStockName(''); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-bold">
+                                <select ref={instrumentRef} onKeyDown={handleInstrumentKeyDown} value={sigInstrument} onChange={e => { setSigInstrument(e.target.value); if (e.target.value !== 'STOCKS') setCustomStockName(''); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-bold">
                                     <option value="NIFTY">NIFTY</option>
                                     <option value="BANKNIFTY">BANKNIFTY</option>
                                     <option value="FINNIFTY">FINNIFTY</option>
@@ -491,6 +546,8 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                                       <Edit size={10} className="mr-1" /> Custom Stock Name
                                     </label>
                                     <input 
+                                      ref={customStockNameRef}
+                                      onKeyDown={handleCustomStockNameKeyDown}
                                       type="text" 
                                       value={customStockName} 
                                       onChange={e => setCustomStockName(e.target.value)} 
@@ -502,13 +559,13 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Symbol</label>
-                                <input type="text" value={sigSymbol} onChange={e => setSigSymbol(e.target.value)} placeholder="e.g. 24500" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
+                                <input ref={symbolRef} onKeyDown={handleSymbolKeyDown} type="text" value={sigSymbol} onChange={e => setSigSymbol(e.target.value)} placeholder="e.g. 24500" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="col-span-1">
                                 <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Type (e.g. CE JAN 27)</label>
-                                <input type="text" value={sigType} onChange={e => setSigType(e.target.value)} placeholder="CE / PE / FUT" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
+                                <input ref={typeRef} onKeyDown={handleTypeKeyDown} type="text" value={sigType} onChange={e => setSigType(e.target.value)} placeholder="CE / PE / FUT" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
                             </div>
                             <div className="col-span-1">
                                 <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Action</label>
@@ -521,17 +578,17 @@ const Admin: React.FC<AdminProps> = ({ signals = [], messages = [], users = [], 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Entry Price</label>
-                                <input type="number" value={sigEntry} onChange={e => setSigEntry(e.target.value)} placeholder="0.00" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
+                                <input ref={entryPriceRef} onKeyDown={handleEntryPriceKeyDown} type="number" value={sigEntry} onChange={e => setSigEntry(e.target.value)} placeholder="0.00" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
                             </div>
                             <div>
                                 <label className="block text-[9px] font-black text-slate-500 mb-1.5 uppercase tracking-widest">Quantity</label>
-                                <input type="number" value={sigQty} onChange={e => setSigQty(e.target.value)} placeholder="Size" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
+                                <input ref={qtyRef} onKeyDown={handleQtyKeyDown} type="number" value={sigQty} onChange={e => setSigQty(e.target.value)} placeholder="Size" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:border-blue-500 outline-none font-mono font-bold" />
                             </div>
                         </div>
                         <button onClick={() => setSigIsBtst(!sigIsBtst)} className={`w-full py-3 rounded-xl border transition-all flex items-center justify-center space-x-2 ${sigIsBtst ? 'bg-amber-500/10 border-amber-500 text-amber-500' : 'bg-slate-950 border-slate-800 text-slate-600'}`}>
                             <Moon size={14} /> <span className="text-[9px] font-black uppercase tracking-widest">BTST Toggle</span>
                         </button>
-                        <button onClick={handleAddSignal} disabled={isSaving || !sigSymbol || !sigEntry || (sigInstrument === 'STOCKS' && !customStockName.trim())} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-4 rounded-2xl text-[11px] font-black transition-all shadow-xl shadow-blue-900/40 uppercase tracking-[0.2em] flex items-center justify-center">
+                        <button ref={submitRef} onClick={handleAddSignal} disabled={isSaving || !sigSymbol || !sigEntry || (sigInstrument === 'STOCKS' && !customStockName.trim())} className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-4 rounded-2xl text-[11px] font-black transition-all shadow-xl shadow-blue-900/40 uppercase tracking-[0.2em] flex items-center justify-center">
                             {isSaving ? <Loader2 size={16} className="animate-spin mr-3" /> : <ShieldCheck size={16} className="mr-3" />} Broadcast Signal
                         </button>
                     </div>
