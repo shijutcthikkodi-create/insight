@@ -183,225 +183,15 @@ const Stats: React.FC<{
     // Month prefix for current month filtering (e.g. "2026-07")
     const currentMonthPrefix = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(now);
 
-    const currentMonthStats = {
-      pnl: 0,
-      indexPnL: 0,
-      stockPnL: 0,
-      overall: [] as number[],
-      intraday: [] as number[],
-      btst: [] as number[],
-      tradeCount: 0
-    };
-
-    const rollingStats = { 
-      pnl: 0, indexPnL: 0, stockPnL: 0, 
-      overall: [] as number[], intraday: [] as number[], btst: [] as number[] 
-    };
-
-    let earliestAuditDate: string | null = null;
-    let latestAuditDate: string | null = null;
-
-    const chartMap: Record<string, number> = {};
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      chartMap[new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d)] = 0;
-    }
-
-    finalHistory.forEach(trade => {
-      const tradeDateStr = normalizeDate(trade);
-      if (!tradeDateStr) return;
-
-      const qty = Number(trade.quantity && trade.quantity > 0 ? trade.quantity : 1);
-      const pnlValue = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0) * qty);
-      
-      const successScore = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0));
-
-      const instrument = trade.instrument || '';
-      const indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'];
-      const isIdx = indices.includes(instrument.toUpperCase());
-
-      // Audit Window for Consistency (Current day this month + last three months, max 120 calendar days)
-      if (tradeDateStr >= auditStartDateStr) {
-        rollingStats.overall.push(successScore);
-        if (trade.isBTST) rollingStats.btst.push(successScore); else rollingStats.intraday.push(successScore);
-        
-        if (!earliestAuditDate || tradeDateStr < earliestAuditDate) earliestAuditDate = tradeDateStr;
-        if (!latestAuditDate || tradeDateStr > latestAuditDate) latestAuditDate = tradeDateStr;
-      }
-
-      // 30-Day Window for Net Outcome
-      if (tradeDateStr >= thirtyDaysAgoStr) {
-        rollingStats.pnl += pnlValue;
-        if (isIdx) rollingStats.indexPnL += pnlValue; else rollingStats.stockPnL += pnlValue;
-      }
-
-      // Current Month Window for Current Month Performance
-      if (tradeDateStr.startsWith(currentMonthPrefix)) {
-        currentMonthStats.overall.push(successScore);
-        if (trade.isBTST) currentMonthStats.btst.push(successScore); else currentMonthStats.intraday.push(successScore);
-        currentMonthStats.pnl += pnlValue;
-        if (isIdx) currentMonthStats.indexPnL += pnlValue; else currentMonthStats.stockPnL += pnlValue;
-        currentMonthStats.tradeCount++;
-      }
-      
-      if (chartMap[tradeDateStr] !== undefined) chartMap[tradeDateStr] += pnlValue;
-    });
-
-    const calculateConsistency = (list: number[]) => {
-      const filteredList = list.filter(v => v !== 0);
-      if (filteredList.length === 0) return null;
-      const successCount = filteredList.filter(v => v > 0).length;
-      return (successCount / filteredList.length) * 100;
-    };
-
-    const historyOverall = calculateConsistency(rollingStats.overall);
-    const historyIntraday = calculateConsistency(rollingStats.intraday);
-    const historyOvernight = calculateConsistency(rollingStats.btst);
-
-    const currentMonthOverallRaw = calculateConsistency(currentMonthStats.overall);
-    const currentMonthIntradayRaw = calculateConsistency(currentMonthStats.intraday);
-    const currentMonthOvernightRaw = calculateConsistency(currentMonthStats.btst);
-
-    const hasDetailedTrades = rollingStats.overall.length > 0;
-
-    const getFallbackPercent = (type: 'overall' | 'intraday' | 'overnight', currentMonthRaw: number | null) => {
-      const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-      const relevantMetrics = (monthlyRealization || []).filter(m => {
-        const [mon, year] = m.month.split('/');
-        const mIdx = monthNames.indexOf(mon.toUpperCase());
-        if (mIdx === -1) return false;
-        const mDate = new Date(parseInt(year), mIdx, 1);
-        return mDate >= auditStartDate && m[type] !== undefined;
-      });
-
-      const metricRatios = relevantMetrics.map(m => m[type] as number);
-      const allRatios = [...metricRatios];
-      if (currentMonthRaw !== null) {
-        allRatios.push(currentMonthRaw);
-      }
-
-      if (allRatios.length === 0) return 0;
-      return allRatios.reduce((a, b) => a + b, 0) / allRatios.length;
-    };
-
-    const overallPercent = hasDetailedTrades
-      ? (historyOverall !== null ? historyOverall : 0)
-      : getFallbackPercent('overall', currentMonthOverallRaw);
-
-    const intradayPercent = hasDetailedTrades
-      ? (historyIntraday !== null ? historyIntraday : 0)
-      : getFallbackPercent('intraday', currentMonthIntradayRaw);
-
-    const overnightPercent = hasDetailedTrades
-      ? (historyOvernight !== null ? historyOvernight : 0)
-      : getFallbackPercent('overnight', currentMonthOvernightRaw);
-
-    const formatDate = (isoStr: string | null) => {
-      if (!isoStr) return '--';
-      const d = new Date(isoStr);
-      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase();
-    };
-
-    const currentMonthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-
-    return {
-      rollingPnL: rollingStats.pnl,
-      indexPnL: rollingStats.indexPnL,
-      stockPnL: rollingStats.stockPnL,
-      overallPercent,
-      intradayPercent,
-      overnightPercent,
-
-      currentMonthPnL: currentMonthStats.pnl,
-      currentMonthIndexPnL: currentMonthStats.indexPnL,
-      currentMonthStockPnL: currentMonthStats.stockPnL,
-      currentMonthOverall: currentMonthOverallRaw !== null ? currentMonthOverallRaw : 0,
-      currentMonthIntraday: currentMonthIntradayRaw !== null ? currentMonthIntradayRaw : 0,
-      currentMonthOvernight: currentMonthOvernightRaw !== null ? currentMonthOvernightRaw : 0,
-      currentMonthTradeCount: currentMonthStats.tradeCount,
-      currentMonthStart: formatDate(currentMonthStartStr),
-      currentMonthEnd: formatDate(now.toISOString()),
-
-      auditStart: formatDate(auditStartDateStr),
-      auditEnd: formatDate(latestAuditDate || now.toISOString()),
-      auditDays: exactAuditDays,
-      chartData: Object.entries(chartMap).map(([date, pnl]) => ({ 
-        date: date.split('-').reverse().slice(0, 2).join('/'), 
-        pnl 
-      })),
-      monthlyChartData: (() => {
-        const monthChartMap: Record<string, number> = {};
-        const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-        
-        // Generate last 14 months
-        const now = new Date();
-        for (let i = 13; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(1); // Avoid month-end overflow
-          d.setMonth(d.getMonth() - i);
-          const m = monthNames[d.getMonth()];
-          const y = d.getFullYear();
-          const key = `${m}/${y}`;
-          monthChartMap[key] = 0;
-        }
-
-        // Fill with historical metrics data
-        (monthlyRealization || []).forEach(item => {
-          const k = item.month.toUpperCase();
-          if (monthChartMap[k] !== undefined) {
-            monthChartMap[k] = item.realization;
-          }
-        });
-
-        // Add current month's PnL from history if not already provided by metrics
-        const currentMonthKey = `${monthNames[now.getMonth()]}/${now.getFullYear()}`;
-        if (monthChartMap[currentMonthKey] === 0) {
-          const currentMonthPnL = combinedHistory.reduce((sum, trade) => {
-            const tradeDateStr = normalizeDate(trade);
-            if (!tradeDateStr) return sum;
-            const d = new Date(tradeDateStr);
-            if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-              const qty = Number(trade.quantity && trade.quantity > 0 ? trade.quantity : 1);
-              const pnl = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0) * qty);
-              return sum + pnl;
-            }
-            return sum;
-          }, 0);
-          monthChartMap[currentMonthKey] = currentMonthPnL;
-        }
-
-        return Object.entries(monthChartMap).map(([month, realization]) => ({
-          month,
-          realization
-        }));
-      })()
-    };
-  }, [signals, historySignals, monthlyRealization]);
-
-  const [isPublishing, setIsPublishing] = useState<Record<string, boolean>>({});
-
-  const monthlyBreakdown = useMemo(() => {
     const monthNames = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     const fullMonthNames = [
       'January', 'February', 'March', 'April', 'May', 'June', 
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     
-    const unifiedMap = new Map<string, TradeSignal>();
-    (signals || []).forEach(s => {
-      if (s.status === TradeStatus.EXITED || s.status === TradeStatus.STOPPED || s.status === TradeStatus.ALL_TARGET) {
-        if (s.id) unifiedMap.set(s.id, s);
-      }
-    });
-    (historySignals || []).forEach(s => {
-      const id = s.id || `hist-${normalizeDate(s)}-${s.symbol}-${s.entryPrice}`;
-      unifiedMap.set(id, s);
-    });
-
-    const combinedHistory = Array.from(unifiedMap.values());
-    const result = [];
-    const now = new Date();
-
+    // Compute Monthly Breakdown (including Fallback Logic from Metrics Sheet per month)
+    const monthlyBreakdown: any[] = [];
+    
     for (let i = 0; i < 4; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const mIdx = d.getMonth();
@@ -411,7 +201,7 @@ const Stats: React.FC<{
       const monShort = monthNames[mIdx];
       const sheetMonthKey = `${monShort}/${year}`;
 
-      const monthTrades = combinedHistory.filter(trade => {
+      const monthTrades = finalHistory.filter(trade => {
         const tradeDateStr = normalizeDate(trade);
         return tradeDateStr && tradeDateStr.startsWith(monthPrefix);
       });
@@ -462,17 +252,38 @@ const Stats: React.FC<{
       const sheetMetric = (monthlyRealization || []).find(m => m.month.toUpperCase() === sheetMonthKey);
       const hasHistoryTrades = tradeCount > 0;
 
-      const finalOverall = hasHistoryTrades && historyOverall !== null ? historyOverall : (sheetMetric?.overall ?? 0);
-      const finalIntraday = hasHistoryTrades && historyIntraday !== null ? historyIntraday : (sheetMetric?.intraday ?? 0);
-      const finalOvernight = hasHistoryTrades && historyOvernight !== null ? historyOvernight : (sheetMetric?.overnight ?? 0);
-      
-      const finalPnL = hasHistoryTrades ? totalPnL : (sheetMetric?.realization ?? 0);
-      const finalCount = hasHistoryTrades ? tradeCount : (sheetMetric?.count ?? 0);
-      
-      const finalStockPnL = hasHistoryTrades ? stockPnL : (sheetMetric?.realization !== undefined ? sheetMetric.realization * 0.4 : 0);
-      const finalIndexPnL = hasHistoryTrades ? indexPnL : (sheetMetric?.realization !== undefined ? sheetMetric.realization * 0.6 : 0);
+      const finalIntraday = (sheetMetric && sheetMetric.intraday !== undefined && sheetMetric.intraday !== null)
+        ? sheetMetric.intraday
+        : (hasHistoryTrades && historyIntraday !== null ? historyIntraday : 0);
 
-      result.push({
+      const finalOvernight = (sheetMetric && sheetMetric.overnight !== undefined && sheetMetric.overnight !== null)
+        ? sheetMetric.overnight
+        : (hasHistoryTrades && historyOvernight !== null ? historyOvernight : 0);
+
+      const hasIntradayData = (sheetMetric && sheetMetric.intraday !== undefined && sheetMetric.intraday !== null)
+        || (hasHistoryTrades && historyIntraday !== null);
+
+      const hasOvernightData = (sheetMetric && sheetMetric.overnight !== undefined && sheetMetric.overnight !== null)
+        || (hasHistoryTrades && historyOvernight !== null);
+
+      let finalOverall = 0;
+      if (hasIntradayData && hasOvernightData) {
+        finalOverall = (finalIntraday + finalOvernight) / 2;
+      } else if (hasIntradayData) {
+        finalOverall = finalIntraday;
+      } else if (hasOvernightData) {
+        finalOverall = finalOvernight;
+      } else {
+        finalOverall = 0;
+      }
+      
+      const finalPnL = totalPnL + (sheetMetric?.realization ?? 0);
+      const finalCount = tradeCount + (sheetMetric?.count ?? 0);
+      
+      const finalStockPnL = stockPnL + (sheetMetric?.realization !== undefined ? sheetMetric.realization * 0.4 : 0);
+      const finalIndexPnL = indexPnL + (sheetMetric?.realization !== undefined ? sheetMetric.realization * 0.6 : 0);
+
+      monthlyBreakdown.push({
         label: `${fullMonthNames[mIdx]} ${year}`,
         shortLabel: `${monShort} ${String(year).slice(-2)}`,
         monthKey: sheetMonthKey,
@@ -488,8 +299,208 @@ const Stats: React.FC<{
       });
     }
 
-    return result;
+    const currentMonth = monthlyBreakdown[0];
+
+    // Rolling statistics are computed by combining or averaging the monthly metrics from monthlyBreakdown
+    const overallPercent = monthlyBreakdown.reduce((sum, m) => sum + m.overall, 0) / monthlyBreakdown.length;
+    const intradayPercent = monthlyBreakdown.reduce((sum, m) => sum + m.intraday, 0) / monthlyBreakdown.length;
+    const overnightPercent = monthlyBreakdown.reduce((sum, m) => sum + m.overnight, 0) / monthlyBreakdown.length;
+
+    // Rolling 30-day outcomes: compute from actual history in the last 30 days as first preference, fall back to current month's values otherwise
+    const tradesLast30Days = finalHistory.filter(trade => {
+      const tradeDateStr = normalizeDate(trade);
+      return tradeDateStr && tradeDateStr >= thirtyDaysAgoStr;
+    });
+
+    let rollingPnL = 0;
+    let indexPnL = 0;
+    let stockPnL = 0;
+
+    if (tradesLast30Days.length > 0) {
+      tradesLast30Days.forEach(trade => {
+        const qty = Number(trade.quantity && trade.quantity > 0 ? trade.quantity : 1);
+        const pnlValue = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0) * qty);
+        const instrument = trade.instrument || '';
+        const indices = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX'];
+        const isIdx = indices.includes(instrument.toUpperCase());
+
+        rollingPnL += pnlValue;
+        if (isIdx) indexPnL += pnlValue; else stockPnL += pnlValue;
+      });
+    } else {
+      rollingPnL = currentMonth.pnl;
+      indexPnL = currentMonth.indexPnL;
+      stockPnL = currentMonth.stockPnL;
+    }
+
+    let earliestAuditDate: string | null = null;
+    let latestAuditDate: string | null = null;
+
+    // Find the earliest date among months in monthlyBreakdown that have data (either history or sheetMetric)
+    for (let idx = monthlyBreakdown.length - 1; idx >= 0; idx--) {
+      const m = monthlyBreakdown[idx];
+      const hasMetricData = (monthlyRealization || []).some(sheetM => sheetM.month.toUpperCase() === m.monthKey.toUpperCase());
+      if (m.hasHistory) {
+        const [monShort, yrStr] = m.monthKey.split('/');
+        const mIdx = monthNames.indexOf(monShort.toUpperCase());
+        const monthPrefix = `${yrStr}-${String(mIdx + 1).padStart(2, '0')}`;
+        const monthTradeDates = finalHistory
+          .map(t => normalizeDate(t))
+          .filter((d): d is string => !!d && d.startsWith(monthPrefix))
+          .sort();
+        if (monthTradeDates.length > 0) {
+          earliestAuditDate = monthTradeDates[0];
+          break;
+        }
+      } else if (hasMetricData) {
+        const [monShort, yrStr] = m.monthKey.split('/');
+        const mIdx = monthNames.indexOf(monShort.toUpperCase());
+        earliestAuditDate = `${yrStr}-${String(mIdx + 1).padStart(2, '0')}-01`;
+        break;
+      }
+    }
+
+    // Find the latest date among months in monthlyBreakdown that have data
+    for (let idx = 0; idx < monthlyBreakdown.length; idx++) {
+      const m = monthlyBreakdown[idx];
+      const hasMetricData = (monthlyRealization || []).some(sheetM => sheetM.month.toUpperCase() === m.monthKey.toUpperCase());
+      if (m.isCurrent && (m.hasHistory || hasMetricData)) {
+        latestAuditDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+        break;
+      }
+      if (m.hasHistory) {
+        const [monShort, yrStr] = m.monthKey.split('/');
+        const mIdx = monthNames.indexOf(monShort.toUpperCase());
+        const monthPrefix = `${yrStr}-${String(mIdx + 1).padStart(2, '0')}`;
+        const monthTradeDates = finalHistory
+          .map(t => normalizeDate(t))
+          .filter((d): d is string => !!d && d.startsWith(monthPrefix))
+          .sort();
+        if (monthTradeDates.length > 0) {
+          latestAuditDate = monthTradeDates[monthTradeDates.length - 1];
+          break;
+        }
+      } else if (hasMetricData) {
+        const [monShort, yrStr] = m.monthKey.split('/');
+        const mIdx = monthNames.indexOf(monShort.toUpperCase());
+        const year = parseInt(yrStr);
+        const lastDay = new Date(year, mIdx + 1, 0).getDate();
+        latestAuditDate = `${yrStr}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        break;
+      }
+    }
+
+    if (!earliestAuditDate) {
+      earliestAuditDate = auditStartDateStr;
+    }
+    if (!latestAuditDate) {
+      latestAuditDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+    }
+
+    const chartMap: Record<string, number> = {};
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      chartMap[new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d)] = 0;
+    }
+
+    finalHistory.forEach(trade => {
+      const tradeDateStr = normalizeDate(trade);
+      if (!tradeDateStr) return;
+
+      const qty = Number(trade.quantity && trade.quantity > 0 ? trade.quantity : 1);
+      const pnlValue = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0) * qty);
+      
+      if (chartMap[tradeDateStr] !== undefined) chartMap[tradeDateStr] += pnlValue;
+    });
+
+    let receivedDays = exactAuditDays;
+    if (earliestAuditDate && latestAuditDate) {
+      const d1 = new Date(earliestAuditDate);
+      const d2 = new Date(latestAuditDate);
+      const utc1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
+      const utc2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
+      receivedDays = Math.round((utc2 - utc1) / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    const formatDate = (isoStr: string | null) => {
+      if (!isoStr) return '--';
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase();
+    };
+
+    const currentMonthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+    return {
+      rollingPnL,
+      indexPnL,
+      stockPnL,
+      overallPercent,
+      intradayPercent,
+      overnightPercent,
+
+      currentMonthPnL: currentMonth.pnl,
+      currentMonthIndexPnL: currentMonth.indexPnL,
+      currentMonthStockPnL: currentMonth.stockPnL,
+      currentMonthOverall: currentMonth.overall,
+      currentMonthIntraday: currentMonth.intraday,
+      currentMonthOvernight: currentMonth.overnight,
+      currentMonthTradeCount: currentMonth.count,
+      currentMonthStart: formatDate(currentMonthStartStr),
+      currentMonthEnd: formatDate(now.toISOString()),
+
+      auditStart: formatDate(earliestAuditDate || auditStartDateStr),
+      auditEnd: formatDate(latestAuditDate || now.toISOString()),
+      auditDays: exactAuditDays,
+      receivedDays,
+      chartData: Object.entries(chartMap).map(([date, pnl]) => ({ 
+        date: date.split('-').reverse().slice(0, 2).join('/'), 
+        pnl 
+      })),
+      monthlyChartData: (() => {
+        const list = [];
+        const now = new Date();
+        
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const mIdx = d.getMonth();
+          const year = d.getFullYear();
+          const monShort = monthNames[mIdx];
+          const sheetMonthKey = `${monShort}/${year}`;
+          const monthPrefix = `${year}-${String(mIdx + 1).padStart(2, '0')}`;
+
+          // Calculate from history+signals first
+          const monthTrades = finalHistory.filter(trade => {
+            const tradeDateStr = normalizeDate(trade);
+            return tradeDateStr && tradeDateStr.startsWith(monthPrefix);
+          });
+
+          let realization = 0;
+          if (monthTrades.length > 0) {
+            realization = monthTrades.reduce((sum, trade) => {
+              const qty = Number(trade.quantity && trade.quantity > 0 ? trade.quantity : 1);
+              const pnl = Number(trade.pnlRupees !== undefined ? trade.pnlRupees : (trade.pnlPoints || 0) * qty);
+              return sum + pnl;
+            }, 0);
+          } else {
+            // Fallback to metrics sheet
+            const sheetMetric = (monthlyRealization || []).find(m => m.month.toUpperCase() === sheetMonthKey);
+            realization = sheetMetric?.realization ?? 0;
+          }
+
+          list.push({
+            month: sheetMonthKey,
+            realization
+          });
+        }
+        return list;
+      })(),
+      monthlyBreakdown
+    };
   }, [signals, historySignals, monthlyRealization]);
+
+  const [isPublishing, setIsPublishing] = useState<Record<string, boolean>>({});
+
+  const { monthlyBreakdown } = performance;
 
   const handlePublishMetrics = async (monthData: any, silent = false) => {
     const monthKey = monthData.monthKey;
@@ -551,10 +562,10 @@ const Stats: React.FC<{
                 <span className="text-blue-500 font-bold">{performance.currentMonthTradeCount} TRADES</span>
              </div>
              <div className="flex items-center space-x-1.5 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-400">
-                <span className="text-slate-500 uppercase font-black tracking-tighter">{performance.auditDays}-Day Audit:</span>
+                <span className="text-slate-500 uppercase font-black tracking-tighter">Audit Window:</span>
                 <span className="text-yellow-500 font-bold">{performance.auditStart} – {performance.auditEnd}</span>
                 <span className="text-slate-600">|</span>
-                <span className="text-yellow-500 font-bold">{performance.auditDays} DAYS</span>
+                <span className="text-yellow-500 font-bold">LAST {performance.receivedDays} DAYS</span>
              </div>
           </div>
         </div>
@@ -590,7 +601,7 @@ const Stats: React.FC<{
           defaultRollingValColorClass={getConsistencyColor(performance.overallPercent)}
           icon={Award}
           highlight={true}
-          rollingLabel={`last ${performance.auditDays} days`}
+          rollingLabel={`last ${performance.receivedDays} days`}
           monthlyData={monthlyBreakdown}
           getConsistencyColor={getConsistencyColor}
           formatCurrency={formatCurrency}
@@ -625,7 +636,7 @@ const Stats: React.FC<{
           defaultRollingVal={`${performance.intradayPercent.toFixed(1)}%`}
           defaultRollingValColorClass={getConsistencyColor(performance.intradayPercent)}
           icon={Zap}
-          rollingLabel={`last ${performance.auditDays} days`}
+          rollingLabel={`last ${performance.receivedDays} days`}
           monthlyData={monthlyBreakdown}
           getConsistencyColor={getConsistencyColor}
           formatCurrency={formatCurrency}
@@ -660,7 +671,7 @@ const Stats: React.FC<{
           defaultRollingVal={`${performance.overnightPercent.toFixed(1)}%`}
           defaultRollingValColorClass={getConsistencyColor(performance.overnightPercent)}
           icon={Clock}
-          rollingLabel={`last ${performance.auditDays} days`}
+          rollingLabel={`last ${performance.receivedDays} days`}
           monthlyData={monthlyBreakdown}
           getConsistencyColor={getConsistencyColor}
           formatCurrency={formatCurrency}
