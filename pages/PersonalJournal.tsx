@@ -282,14 +282,29 @@ const PersonalJournal: React.FC<PersonalJournalProps> = ({ user }) => {
     }
   };
 
-  const handleClearAllData = () => {
-    if (confirm("CRITICAL WARNING: This will permanently delete all logs in your Personal Trading Journal and Portfolio. Are you sure?")) {
+  // States for Clear Ledger Countdown
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearCountdown, setClearCountdown] = useState<number | null>(null);
+
+  // Clear countdown timer effect
+  useEffect(() => {
+    if (clearCountdown === null) return;
+    if (clearCountdown === 0) {
       setOptionTrades([]);
       setPortfolio([]);
       localStorage.removeItem(PERSONAL_STORAGE_KEYS.OPTIONS);
       localStorage.removeItem(PERSONAL_STORAGE_KEYS.PORTFOLIO);
+      setClearCountdown(null);
+      setShowClearModal(false);
+      return;
     }
-  };
+
+    const timer = setTimeout(() => {
+      setClearCountdown(prev => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [clearCountdown]);
 
   // Generate Months List based on logs to check month-wise
   const monthOptions = useMemo(() => {
@@ -474,7 +489,10 @@ const PersonalJournal: React.FC<PersonalJournalProps> = ({ user }) => {
           </div>
 
           <button
-            onClick={handleClearAllData}
+            onClick={() => {
+              setShowClearModal(true);
+              setClearCountdown(null);
+            }}
             className="px-3 py-1.5 bg-rose-950/20 hover:bg-rose-900/30 border border-rose-900/40 hover:border-rose-500/50 rounded-2xl text-[9px] font-black text-rose-400 uppercase tracking-wider transition-all cursor-pointer"
             title="Wipe local storage journal"
           >
@@ -561,7 +579,7 @@ const PersonalJournal: React.FC<PersonalJournalProps> = ({ user }) => {
                 className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center space-x-1.5 cursor-pointer transition-colors"
               >
                 <Plus className="w-3 h-3" />
-                <span>Log New Trade</span>
+                <span>Add My Trade</span>
               </button>
             </div>
 
@@ -662,7 +680,7 @@ const PersonalJournal: React.FC<PersonalJournalProps> = ({ user }) => {
               <div className="py-12 flex flex-col items-center justify-center text-center">
                 <FileText className="w-8 h-8 text-slate-700 mb-3" />
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">No Option trade records logged</p>
-                <p className="text-[10px] text-slate-500 max-w-xs mt-1">Use the "Log New Trade" action above to record your live option trading logs locally.</p>
+                <p className="text-[10px] text-slate-500 max-w-xs mt-1">Use the "Add My Trade" action above to record your live option trading logs locally.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1197,6 +1215,75 @@ const PersonalJournal: React.FC<PersonalJournalProps> = ({ user }) => {
                 Visualizing cumulative settlements categorized month-by-month
               </span>
             </div>
+          </div>
+        </div>
+      )}
+      {/* LEDGER CLEAR CONFIRMATION & COUNTDOWN MODAL */}
+      {showClearModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-in fade-in duration-200" id="clear-ledger-modal">
+          <div className="bg-slate-900 border border-rose-500/30 p-6 rounded-3xl max-w-md w-full space-y-6 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            {clearCountdown === null ? (
+              <>
+                <div className="flex items-center space-x-3 text-rose-400">
+                  <AlertTriangle className="w-6 h-6 animate-pulse" />
+                  <h3 className="text-sm font-black uppercase tracking-wider">Confirm Ledger Wipe</h3>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  You are about to permanently delete all logs in your Personal Trading Journal and Portfolio. 
+                  This will wipe all active options and investments entries from local storage.
+                </p>
+                <div className="p-3 bg-rose-950/20 border border-rose-900/20 rounded-2xl">
+                  <p className="text-[10px] text-rose-400 leading-normal uppercase font-bold tracking-wider">
+                    ⚠️ Irreversible action. Once cleared, your logs cannot be recovered.
+                  </p>
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setShowClearModal(false)}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setClearCountdown(15)}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Yes, Proceed
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-center space-y-6 py-4">
+                <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border-4 border-rose-500/20 animate-pulse"></div>
+                  <div className="absolute inset-0 rounded-full border-4 border-rose-500 border-t-transparent animate-spin duration-1000"></div>
+                  <span className="text-3xl font-black font-mono text-rose-400">{clearCountdown}</span>
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Clearing Ledger in Progress</h3>
+                  <p className="text-[11px] text-slate-400">
+                    A 15-second safety grace period is active. Click below to immediately abort the deletion.
+                  </p>
+                </div>
+
+                <div className="bg-rose-950/30 border border-rose-500/20 p-3 rounded-2xl animate-pulse">
+                  <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest">
+                    ⚠️ DELETING PERSONAL TRADING DATA...
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setClearCountdown(null);
+                    setShowClearModal(false);
+                  }}
+                  className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-cyan-950/50"
+                >
+                  ABORT AND CANCEL ACTION
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
