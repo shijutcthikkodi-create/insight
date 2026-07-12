@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Logo from './Logo';
-import { Menu, X, BarChart2, Radio, ShieldAlert, LogOut, FileText, User as UserIcon, Scale, Clock, CheckCircle, AlertCircle, EyeOff, ShieldCheck, List, TrendingUp, TrendingDown, BellRing, Zap, ArrowUpCircle, ExternalLink, Briefcase, BookOpen, Info, Flame, Newspaper } from 'lucide-react';
+import { Menu, X, BarChart2, Radio, ShieldAlert, LogOut, FileText, User as UserIcon, Scale, Clock, CheckCircle, AlertCircle, EyeOff, ShieldCheck, List, TrendingUp, TrendingDown, BellRing, Zap, ArrowUpCircle, ExternalLink, Briefcase, BookOpen, Info, Flame, Newspaper, BookMarked } from 'lucide-react';
 import { User, WatchlistItem, NewsItem } from '../types';
 import { FOOTER_TEXT, BRANDING_TEXT } from '../constants';
 
@@ -356,6 +356,7 @@ const Layout: React.FC<LayoutProps> = ({
           <NavItem page="booked" icon={CheckCircle} label="Observed Outcomes" />
           <NavItem page="stats" icon={BarChart2} label="Performance Metrics" />
           <NavItem page="journal" icon={Briefcase} label="Options Sandbox" isNew />
+          <NavItem page="personal_journal" icon={BookMarked} label="Personal Ledger" isNew />
           <NavItem page="rules" icon={ShieldAlert} label="Rules & Disclaimer" />
           <NavItem page="about" icon={Info} label="About Us" />
           

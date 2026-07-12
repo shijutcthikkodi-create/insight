@@ -11,9 +11,10 @@ import BookedTrades from './pages/BookedTrades';
 import MarketInsights from './pages/MarketInsights';
 import { NewsFeed } from './pages/NewsFeed';
 import OptionsJournal from './pages/OptionJournal';
+import PersonalJournal from './pages/PersonalJournal';
 import { User, WatchlistItem, TradeSignal, TradeStatus, LogEntry, ChatMessage, InsightData, MonthlyRealization, NewsItem } from './types';
 import { fetchSheetData, updateSheetData } from './services/googleSheetsService';
-import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw, Newspaper, X } from 'lucide-react';
+import { Radio, CheckCircle, BarChart2, Volume2, VolumeX, Database, Zap, BookOpen, Briefcase, ExternalLink, MessageCircle, ShieldAlert, AlertTriangle, ArrowRight, CheckCircle2, Activity, Flame, ShieldCheck, Info, Bell, BellOff, BellRing, RefreshCw, Newspaper, X, BookMarked } from 'lucide-react';
 
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; 
 const SESSION_KEY = 'libra_user_session';
@@ -964,6 +965,7 @@ const App: React.FC = () => {
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
       {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} user={user} />}
       {page === 'journal' && <OptionsJournal signals={signals} user={user} watchlist={watchlist} />}
+      {page === 'personal_journal' && <PersonalJournal user={user} />}
       {page === 'rules' && <Rules />}
       {page === 'about' && <About />}
       {user?.isAdmin && page === 'admin' && <Admin watchlist={watchlist} onUpdateWatchlist={() => {}} signals={signals} onUpdateSignals={() => {}} users={users} onUpdateUsers={() => {}} logs={logs} messages={messages} onNavigate={setPage} onHardSync={() => { deadSignalsRef.current.clear(); deadInsightsRef.current.clear(); return sync(true); }} />}
@@ -992,6 +994,10 @@ const App: React.FC = () => {
         <button onClick={() => setPage('journal')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'journal' ? 'text-blue-500' : 'text-slate-500'}`}>
           <Briefcase size={20} strokeWidth={page === 'journal' ? 3 : 2} />
           <span className="text-[9px] font-bold uppercase tracking-tighter text-center">Sandbox</span>
+        </button>
+        <button onClick={() => setPage('personal_journal')} className={`flex flex-col items-center space-y-1 transition-all shrink-0 ${page === 'personal_journal' ? 'text-cyan-500' : 'text-slate-500'}`}>
+          <BookMarked size={20} strokeWidth={page === 'personal_journal' ? 3 : 2} />
+          <span className="text-[9px] font-bold uppercase tracking-tighter text-center">My Journal</span>
         </button>
       </div>
 
