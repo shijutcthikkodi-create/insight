@@ -962,7 +962,7 @@ const App: React.FC = () => {
       {page === 'news' && <NewsFeed user={user} soundFn={playUpdateBlip} messages={messages} triggerNewsAlert={triggerNewsAlert} onNewsClick={setSelectedNewsItem} />}
       {page === 'insights' && <MarketInsights insights={insights} watchlist={watchlist} user={user} />}
       {page === 'booked' && <BookedTrades signals={signals} historySignals={historySignals} user={user} granularHighlights={granularHighlights} onSignalUpdate={handleSignalUpdate} />}
-      {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} />}
+      {page === 'stats' && <Stats signals={signals} historySignals={historySignals} monthlyRealization={monthlyRealization} user={user} />}
       {page === 'journal' && <OptionsJournal signals={signals} user={user} watchlist={watchlist} />}
       {page === 'rules' && <Rules />}
       {page === 'about' && <About />}

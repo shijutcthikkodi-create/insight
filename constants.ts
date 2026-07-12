@@ -67,6 +67,6 @@ Insight and its owners shall not be responsible for any financial losses, damage
 
 By using this application, you acknowledge that you understand the risks involved in trading and agree to take full responsibility for your own trading decisions.`;
 
-export const FOOTER_TEXT = "Educational purpose only. Not SEBI registered. No investment advice. Trading involves risk. Use at your own responsibility.";
+export const FOOTER_TEXT = "Virtual Paper-Trading Simulator for study purposes. Educational use only. No real capital execution. Not SEBI registered.";
 
 export const BRANDING_TEXT = "DEVELOPED BY Libra Fin-Tech Solutions";

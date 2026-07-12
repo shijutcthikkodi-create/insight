@@ -31,15 +31,15 @@ const Rules: React.FC = () => {
         <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
         <h3 className="text-sm font-black text-white mb-6 uppercase tracking-widest flex items-center">
           <Shield size={16} className="mr-3 text-blue-500" />
-          Subscriber Code of Conduct
+          Virtual Simulator Code of Conduct
         </h3>
         <ul className="space-y-4">
             {[
-                "Strict Stop Loss MUST be maintained for every trade without exception.",
-                "Do not over-leverage. Recommended risk per trade is strictly 2% of capital.",
-                "Sharing internal terminal data or screenshots is prohibited (Watermarked).",
-                "Trade execution status (Active/Exit) as per Terminal Admin is final.",
-                "Abusive conduct results in immediate access termination without refund."
+                "Practice setting strict virtual Stop Losses to learn disciplined capital preservation.",
+                "Simulate prudent position sizing (e.g. maximum 2% of virtual account value per trade).",
+                "Review simulated analytical setups solely for educational and simulation study purposes.",
+                "Treat all buy/sell targets as virtual educational models, not real trade recommendations.",
+                "Sharing internal simulation screenshots or database metrics without permission is prohibited."
             ].map((rule, idx) => (
                 <li key={idx} className="flex items-start text-slate-300 group">
                     <div className="mt-1 mr-4">

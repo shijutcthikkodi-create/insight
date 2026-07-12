@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Info, Target, Shield, Cpu, Scale } from 'lucide-react';
+import { Info, Target, Shield, Cpu, Scale, Brain } from 'lucide-react';
 
 const About: React.FC = () => {
   return (
@@ -54,6 +54,54 @@ const About: React.FC = () => {
                  ))}
               </div>
            </div>
+        </div>
+      </div>
+
+      {/* Why Insight App Section */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="flex items-center space-x-3 mb-6">
+           <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
+              <Brain size={20} />
+           </div>
+           <h3 className="text-sm font-black text-white uppercase tracking-widest">Why Insight App?</h3>
+        </div>
+        
+        <p className="text-slate-400 text-sm leading-relaxed font-medium mb-8">
+          The Insight App is designed as an interactive simulator and structured decision-support utility. Our primary purpose is to promote advanced risk awareness and systematic paper-trading practice. This focus on education and mental discipline acts as a strong protective framework to comply with modern retail protection objectives.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <div className="bg-slate-950/60 border border-slate-800/80 p-5 rounded-2xl space-y-3 hover:border-slate-700/50 transition-colors">
+              <h4 className="text-xs font-black text-blue-400 uppercase tracking-wider">Practice to Control Mind</h4>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                 Cultivate mental discipline and mechanical emotional control. By logging, checking, and analyzing simulated trading strategies, users train themselves to neutralize greed, fear, and overtrading.
+              </p>
+           </div>
+
+           <div className="bg-slate-950/60 border border-slate-800/80 p-5 rounded-2xl space-y-3 hover:border-slate-700/50 transition-colors">
+              <h4 className="text-xs font-black text-emerald-400 uppercase tracking-wider">Practice to Reduce Risk</h4>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                 Gain deep awareness of risk-to-reward dynamics. Learn how specific stop-loss guidelines, position sizing rules, and target placements directly influence your performance profile over time.
+              </p>
+           </div>
+
+           <div className="bg-slate-950/60 border border-slate-800/80 p-5 rounded-2xl space-y-3 hover:border-slate-700/50 transition-colors">
+              <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">Protect Capital with Paper Trade</h4>
+              <p className="text-slate-400 text-xs leading-relaxed">
+                 Harness simulation tools to run robust paper trades. Verify setup metrics and test strategies in a risk-free workspace, fully protecting your financial capital until consistency is achieved.
+              </p>
+           </div>
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-slate-800/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+           <div className="flex items-center space-x-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <Scale size={14} className="text-blue-500" />
+              <span>Strong Regulatory Protection Compliance</span>
+           </div>
+           <p className="text-[11px] text-slate-500 max-w-xl leading-relaxed">
+              We stand firmly behind regulatory guidelines that prioritize retail protection. Offering non-advisory, education-first utilities and detailed simulation environments safeguards users from speculative dangers and builds long-term capability.
+           </p>
         </div>
       </div>
 

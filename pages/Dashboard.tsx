@@ -29,6 +29,31 @@ const Dashboard: React.FC<DashboardProps> = ({
   onSignalUpdate
 }) => {
   const [currentIntelIndex, setCurrentIntelIndex] = useState(0);
+  const [sandboxCapital, setSandboxCapital] = useState<number>(500000);
+  const [sandboxPositionsCount, setSandboxPositionsCount] = useState<number>(0);
+  const [sandboxClosedCount, setSandboxClosedCount] = useState<number>(0);
+
+  useEffect(() => {
+    const savedCapital = localStorage.getItem('libra_mock_capital');
+    if (savedCapital) {
+      setSandboxCapital(Number(savedCapital));
+    }
+    const savedPositionsStr = localStorage.getItem('libra_mock_positions');
+    if (savedPositionsStr) {
+      try {
+        const parsed = JSON.parse(savedPositionsStr);
+        if (Array.isArray(parsed)) {
+          const open = parsed.filter((p: any) => p.status === 'OPEN').length;
+          const closed = parsed.filter((p: any) => p.status === 'CLOSED').length;
+          setSandboxPositionsCount(open);
+          setSandboxClosedCount(closed);
+        }
+      } catch (e) {
+        console.error("Error loading sandbox portfolio metrics", e);
+      }
+    }
+  }, []);
+
 
   const parseFlexibleDate = (dateStr: string | undefined): Date | null => {
     if (!dateStr) return null;
@@ -103,24 +128,62 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white mb-1 flex items-center">
-            <Activity size={24} className="mr-2 text-emerald-500" />
-            Live Analysis Feed
+            <Activity size={24} className="mr-2 text-blue-500 animate-pulse" />
+            Simulated Practice Feed
           </h2>
-          <p className="text-slate-400 text-sm font-mono tracking-tighter italic">Institutional Terminal Active</p>
+          <p className="text-slate-400 text-sm font-mono tracking-tighter italic">Educational Simulator Active</p>
         </div>
         <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3">
             <div className="flex items-center px-3 py-1 bg-slate-900 border border-slate-800 rounded-full text-[10px] font-bold text-slate-500">
               <Clock size={12} className="mr-1.5 text-blue-500" />
               IST: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
             </div>
-            <div className="flex items-center px-4 py-2 bg-slate-900/50 border border-emerald-500/20 text-emerald-500 rounded-lg transition-all text-[10px] font-black uppercase tracking-widest">
-                <ShieldCheck size={14} className="mr-2" /> Verified Partner
+            <div className="flex items-center px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg transition-all text-[10px] font-black uppercase tracking-widest">
+                <ShieldCheck size={14} className="mr-2" /> 100% Virtual Simulator
             </div>
+        </div>
+      </div>
+
+      {/* Prominent Sandbox & Virtual Capital Status Block for SEBI/Regulatory compliance */}
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950/20 to-slate-900 border border-blue-500/20 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 relative z-10">
+          <div className="space-y-2 max-w-xl">
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[9px] font-black uppercase tracking-widest">
+                Active Portfolio Sandbox
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">Non-Advisory Practice Mode</span>
+            </div>
+            <h3 className="text-lg font-black text-white leading-tight uppercase tracking-tight">Practice Capital Protection Utility</h3>
+            <p className="text-slate-400 text-xs leading-relaxed font-medium">
+              This terminal is a simulated sandbox workspace. All trade scenarios, option setups, and signals are 100% virtual and strictly for paper-trading practice. Use this platform to master mental discipline, stop-loss rules, and risk reduction without endangering real capital.
+            </p>
+          </div>
+          
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-4 shrink-0 bg-slate-950/60 border border-slate-800 p-4 rounded-xl">
+            <div className="space-y-1 pr-4 md:border-r border-slate-800/80 min-w-[120px]">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Virtual Balance</span>
+              <p className="text-lg font-mono font-black text-emerald-400">
+                ₹{sandboxCapital.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div className="space-y-1 pr-2 min-w-[100px]">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sandbox Activity</span>
+              <div className="flex items-center space-x-2 text-xs font-bold text-white font-mono">
+                <span className="text-blue-400">{sandboxPositionsCount} OPEN</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-slate-400">{sandboxClosedCount} LOGS</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
+
           {currentIntel && (
             <div className={`relative group overflow-hidden rounded-2xl border transition-all duration-700 ${isIntelAlerting ? 'border-blue-500 animate-card-pulse bg-blue-900/30' : 'border-blue-500/30 bg-gradient-to-br from-blue-900/20 to-slate-950'} p-1`}>
                <div className="absolute top-0 right-0 p-3 opacity-10 pointer-events-none">
@@ -197,8 +260,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                   <div className="flex-grow">
                       <div className="flex items-center space-x-3 mb-1.5">
-                          <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black uppercase tracking-[0.1em]">
-                            Last Signal Broadcast
+                          <span className="px-2.5 py-0.5 rounded bg-blue-500 text-white text-[10px] font-black uppercase tracking-[0.1em]">
+                            Last Simulated Setup
                           </span>
                           <div className="flex items-center text-[10px] font-mono font-black text-blue-400">
                               <Timer size={12} className="mr-1.5" />
@@ -272,8 +335,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           <div>
               <div className="mb-4 flex items-center space-x-2 px-1">
-                 <Zap size={16} className="text-emerald-500" />
-                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Signal Feed</h3>
+                 <Zap size={16} className="text-blue-500" />
+                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Simulated Setup Feed</h3>
               </div>
               {sortedSignals.length === 0 ? (
                   <div className="text-center py-20 bg-slate-900/50 border border-dashed border-slate-800 rounded-3xl">
